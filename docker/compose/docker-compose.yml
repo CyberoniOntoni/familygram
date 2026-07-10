@@ -1,0 +1,824 @@
+﻿networks:
+  tg-net:
+    driver: bridge
+
+services:
+  ### Redis
+  redis:
+    image: redis:8-alpine
+    restart: always
+    networks:
+      - tg-net
+    #ports:
+    #- "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    # Optional auth:
+    # command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000", "--requirepass", "${REDIS_PASSWORD}"]
+    # environment:
+    #   REDIS_PASSWORD: ${Redis__Password:-changeme}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  ### RabbitMq
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    restart: always
+    networks:
+      - tg-net
+    #ports:
+    #  - "5672:5672"
+    #  - "15672:15672"
+    volumes:
+      - ./data/rabbitmq:/var/lib/rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RabbitMQ__Connections__Default__UserName:-test}
+      RABBITMQ_DEFAULT_PASS: ${RabbitMQ__Connections__Default__Password}
+      RABBITMQ_ERLANG_COOKIE: ${RabbitMQ__ErlangCookie:-changeme-cookie}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ### MongoDb
+  mongodb:
+    image: mongo:8
+    restart: always
+    networks:
+      - tg-net
+    #ports:
+    #  - "27017:27017"
+    command: ["mongod", "--quiet", "--logpath", "/dev/null", "--logappend"]
+    volumes:
+      - ./data/mongo/db:/data/db
+      - ./data/mongo/configdb:/data/configdb
+    # environment:
+    #   MONGO_INITDB_ROOT_USERNAME: ${Mongo__User:-root}
+    #   MONGO_INITDB_ROOT_PASSWORD: ${Mongo__Password:-rootpass}
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand({ ping: 1 })"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ### Minio
+  minio:
+    image: minio/minio:latest
+    restart: always
+    networks:
+      - tg-net
+
+    #ports:
+    #  - 9000:9000
+    #  - 9001:9001
+    environment:
+      MINIO_ROOT_USER: ${Minio__AccessKey}
+      MINIO_ROOT_PASSWORD: ${Minio__SecretKey}
+    volumes:
+      - ./data/minio:/data
+      #- /docker/minio/config:/root/./minio/
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  ### MinIO proxy (neutralises 416 Range-Not-Satisfiable for the file-server SDK)
+  # The upstream file-server bundles a MinIO .NET SDK that throws
+  # NullReferenceException on 416 responses (byte-range requests past EOF, i.e. the
+  # last chunk of a download). This tiny nginx proxy rewrites those 416s into a clean
+  # empty 200 so the SDK stops crashing. All other traffic passes through untouched.
+  minio-proxy:
+    image: nginx:alpine
+    restart: always
+    networks:
+      - tg-net
+    volumes:
+      - ./minio-proxy.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  ### Coturn (STUN/TURN server for WebRTC calls)
+  coturn:
+    image: coturn/coturn:latest
+    restart: always
+    networks:
+      - tg-net
+    ports:
+      - "5348:5348"
+      - "5348:5348/udp"
+      - "49152-49172:49152-49172/udp"
+    volumes:
+      - ./data/coturn:/var/lib/coturn
+    command: >
+      --verbose
+      --listening-ip=0.0.0.0
+      --relay-ip=0.0.0.0
+      --external-ip=${COTURN_EXTERNAL_IP:-${App__WebRtcConnections__0__Ip:-127.0.0.1}}
+      --realm=testgram
+      --server-name=testgram
+      --listening-port=5348
+      --min-port=49152
+      --max-port=49172
+      --fingerprint
+      --lt-cred-mech
+      --no-tls
+      --no-dtls
+      --user=${App__WebRtcConnections__0__UserName:-testgram}:${App__WebRtcConnections__0__Password:-testgram2024}
+      --log-file=stdout
+
+  ### RTMP server for group calls and live stories
+  rtmp-server:
+    image: bluenviron/mediamtx:latest
+    restart: always
+    networks:
+      - tg-net
+    ports:
+      - "${RTMP_PORT:-1935}:1935"
+      - "${RTMP_HLS_PORT:-8888}:8888"
+    volumes:
+      - ./data/rtmp:/recordings
+
+
+  ################### MyTelegram server
+
+  ### Call system init (setup indexes)
+  call-init:
+    image: mongo:8
+    networks:
+      - tg-net
+    environment:
+      ConnectionStrings__Default: ${ConnectionStrings__Default}
+      App__DatabaseName: ${App__DatabaseName}
+    volumes:
+      - ./init-calls.sh:/init-calls.sh:ro
+    command: ["/bin/bash", "/init-calls.sh"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+
+  business-init:
+    image: mongo:8
+    networks:
+      - tg-net
+    volumes:
+      - ./init-business.sh:/init-business.sh:ro
+    command: ["/bin/bash", "/init-business.sh"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+
+  botfather-init:
+    image: mongo:8
+    networks:
+      - tg-net
+    volumes:
+      - ./init-botfather.sh:/init-botfather.sh:ro
+    command: ["/bin/bash", "/init-botfather.sh"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+
+  telegram-service-init:
+    image: mongo:8
+    networks:
+      - tg-net
+    volumes:
+      - ./init-telegram-service.sh:/init-telegram-service.sh:ro
+    command: ["/bin/bash", "/init-telegram-service.sh"]
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+
+### Data seeder
+  data-seeder:
+    image: ${TestgramRegistry}/mytelegram-data-seeder:${TestgramVersion}
+    restart: always
+    networks:
+      - tg-net
+    environment:
+      Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default}
+      ConnectionStrings__Default: ${ConnectionStrings__Default}
+      App__Brand: ${App__Brand:-Testgram}
+      App__DatabaseName: ${App__DatabaseName}
+      App__ReadModelDatabaseName: ${App__ReadModelDatabaseName}
+      App__CreateTestUsers: ${App__CreateTestUsers}
+      App__ProtectedUsernames__0: ${App__ProtectedUsernames__0:-admin}
+      App__ProtectedUsernames__1: ${App__ProtectedUsernames__1:-botfather}
+      App__ProtectedUsernames__2: ${App__ProtectedUsernames__2:-support}
+      App__ProtectedUsernames__3: ${App__ProtectedUsernames__3:-telegram}
+      # App__LoadAllStickersIntoMemory: ${App__LoadAllStickersIntoMemory}
+      RabbitMQ__Connections__Default__HostName: ${RabbitMQ__Connections__Default__HostName:-rabbitmq}
+      RabbitMQ__Connections__Default__Port: ${RabbitMQ__Connections__Default__Port:-5672}
+      RabbitMQ__Connections__Default__UserName: ${RabbitMQ__Connections__Default__UserName:-test}
+      RabbitMQ__Connections__Default__Password: ${RabbitMQ__Connections__Default__Password}
+      #RabbitMQ__EventBus__ClientName: ${RabbitMQ__EventBus__ClientName}
+      RabbitMQ__EventBus__ExchangeName: ${RabbitMQ__EventBus__ExchangeName}
+    volumes:
+      - ./data/mytelegram/data-seeder/logs:/app/Logs
+      - ./data/mytelegram/data-seeder/downloads:/app/downloads
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      botfather-init:
+        condition: service_completed_successfully
+      telegram-service-init:
+        condition: service_completed_successfully
+
+  ### 1.Gateway server
+  gateway-server:
+    image: ${TestgramRegistry}/mytelegram-gateway-server:${TestgramVersion}
+    restart: always
+    networks:
+      - tg-net
+    ports:
+      - "${App__Servers__0__Port}:${App__Servers__0__Port}"
+      - "${App__Servers__1__Port}:${App__Servers__1__Port}"
+      - "${App__Servers__2__Port}:${App__Servers__2__Port}"
+      - "${App__Servers__3__Port}:${App__Servers__3__Port}"
+      - "${App__Servers__4__Port}:${App__Servers__4__Port}"
+      - "${App__Servers__5__Port}:${App__Servers__5__Port}"
+    volumes:
+      - ./data/mytelegram/gateway/logs:/app/Logs
+    environment:
+      Serilog__MinimumLevel__Default: Debug
+      # App__ThisDcId: ${App__ThisDcId}
+      # App__MediaOnly: ${App__MediaOnly}
+      App__Servers__0__Enabled: ${App__Servers__0__Enabled:-True}
+      # App__Servers__0__ServerType: ${App__Servers__0__ServerType}
+      # App__Servers__0__Ip: ${App__Servers__0__Ip}
+      # App__Servers__0__Ipv6: ${App__Servers__0__Ipv6}
+      App__Servers__0__Port: ${App__Servers__0__Port}
+      # App__Servers__0__Ssl: ${App__Servers__0__Ssl}
+      # App__Servers__0__CertPemFilePath: ${App__Servers__0__CertPemFilePath}
+      # App__Servers__0__KeyPemFilePath: ${App__Servers__0__KeyPemFilePath}
+      # App__Servers__0__EnableProxyProtocolV2: ${App__Servers__0__EnableProxyProtocolV2}
+      # App__Servers__0__MediaOnly: ${App__Servers__0__MediaOnly}
+      App__Servers__1__Enabled: ${App__Servers__1__Enabled}
+      # App__Servers__1__ServerType: ${App__Servers__1__ServerType}
+      # App__Servers__1__Ip: ${App__Servers__1__Ip}
+      # App__Servers__1__Ipv6: ${App__Servers__1__Ipv6}
+      App__Servers__1__Port: ${App__Servers__1__Port}
+      # App__Servers__1__Ssl: ${App__Servers__1__Ssl}
+      # App__Servers__1__CertPemFilePath: ${App__Servers__1__CertPemFilePath}
+      # App__Servers__1__KeyPemFilePath: ${App__Servers__1__KeyPemFilePath}
+      # App__Servers__1__EnableProxyProtocolV2: ${App__Servers__1__EnableProxyProtocolV2}
+      # App__Servers__1__MediaOnly: ${App__Servers__1__MediaOnly}
+      App__Servers__2__Enabled: ${App__Servers__2__Enabled}
+      # App__Servers__2__ServerType: ${App__Servers__2__ServerType}
+      # App__Servers__2__Ip: ${App__Servers__2__Ip}
+      # App__Servers__2__Ipv6: ${App__Servers__2__Ipv6}
+      App__Servers__2__Port: ${App__Servers__2__Port}
+      # App__Servers__2__Ssl: ${App__Servers__2__Ssl}
+      # App__Servers__2__CertPemFilePath: ${App__Servers__2__CertPemFilePath}
+      # App__Servers__2__KeyPemFilePath: ${App__Servers__2__KeyPemFilePath}
+      # App__Servers__2__EnableProxyProtocolV2: ${App__Servers__2__EnableProxyProtocolV2}
+      App__Servers__2__MediaOnly: "False"
+      App__Servers__3__Enabled: ${App__Servers__3__Enabled}
+      # App__Servers__3__ServerType: ${App__Servers__3__ServerType}
+      # App__Servers__3__Ip: ${App__Servers__3__Ip}
+      # App__Servers__3__Ipv6: ${App__Servers__3__Ipv6}
+      App__Servers__3__Port: ${App__Servers__3__Port}
+      # App__Servers__3__Ssl: ${App__Servers__3__Ssl}
+      # App__Servers__3__CertPemFilePath: ${App__Servers__3__CertPemFilePath}
+      # App__Servers__3__KeyPemFilePath: ${App__Servers__3__KeyPemFilePath}
+      # App__Servers__3__EnableProxyProtocolV2: ${App__Servers__3__EnableProxyProtocolV2}
+      App__Servers__3__MediaOnly: "False"
+      App__Servers__4__Enabled: ${App__Servers__4__Enabled}
+      # App__Servers__4__ServerType: ${App__Servers__4__ServerType}
+      # App__Servers__4__Ip: ${App__Servers__4__Ip}
+      # App__Servers__4__Ipv6: ${App__Servers__4__Ipv6}
+      App__Servers__4__Port: ${App__Servers__4__Port}
+      # App__Servers__4__Ssl: ${App__Servers__4__Ssl}
+      # App__Servers__4__CertPemFilePath: ${App__Servers__4__CertPemFilePath}
+      # App__Servers__4__KeyPemFilePath: ${App__Servers__4__KeyPemFilePath}
+      # App__Servers__4__EnableProxyProtocolV2: ${App__Servers__4__EnableProxyProtocolV2}
+      # App__Servers__4__MediaOnly: ${App__Servers__4__MediaOnly}
+      App__Servers__5__Enabled: ${App__Servers__5__Enabled}
+      # App__Servers__5__ServerType: ${App__Servers__5__ServerType}
+      # App__Servers__5__Ip: ${App__Servers__5__Ip}
+      # App__Servers__5__Ipv6: ${App__Servers__5__Ipv6}
+      App__Servers__5__Port: ${App__Servers__5__Port}
+      # App__Servers__5__Ssl: ${App__Servers__5__Ssl}
+      # App__Servers__5__CertPemFilePath: ${App__Servers__5__CertPemFilePath}
+      # App__Servers__5__KeyPemFilePath: ${App__Servers__5__KeyPemFilePath}
+      # App__Servers__5__EnableProxyProtocolV2: ${App__Servers__5__EnableProxyProtocolV2}
+      # App__Servers__5__MediaOnly: ${App__Servers__5__MediaOnly}
+      RabbitMQ__Connections__Default__HostName: ${RabbitMQ__Connections__Default__HostName:-rabbitmq}
+      RabbitMQ__Connections__Default__Port: ${RabbitMQ__Connections__Default__Port:-5672}
+      RabbitMQ__Connections__Default__UserName: ${RabbitMQ__Connections__Default__UserName:-test}
+      RabbitMQ__Connections__Default__Password: ${RabbitMQ__Connections__Default__Password}
+      #RabbitMQ__EventBus__ClientName: ${RabbitMQ__EventBus__ClientName}
+      RabbitMQ__EventBus__ExchangeName: ${RabbitMQ__EventBus__ExchangeName}
+      Redis__Configuration: ${Redis__Configuration}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ### 2.Seq server
+  # seq-server:
+  # image: mytelegram/mytelegram-seq-server:${MyTelegramVersion}
+  # restart: always
+  # networks:
+  # - tg-net
+  # #ports:
+  # #  - "10001:80"
+  # environment:
+  # ConnectionStrings__Default: ${DefaultConnectionStrings}
+  # Serilog__MinimumLevel__Default: ${DefaultLogLevel}
+  # volumes:
+  # - ./data/mytelegram/seq/logs:/data/Logs
+  # depends_on:
+  # - mongodb
+
+  ### 2.Auth server
+  auth-server:
+    image: ${TestgramRegistry}/mytelegram-auth-server:${TestgramVersion}
+    restart: always
+    networks:
+      - tg-net
+    environment:
+      Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default}
+      App__DatabaseName: ${App__DatabaseName}
+      App__ReadModelDatabaseName: ${App__ReadModelDatabaseName}
+      App__AccessHashSecretKey: ${App__AccessHashSecretKey}
+      App__DcOptions__0__IpAddress: ${App__DcOptions__0__IpAddress}
+      App__DcOptions__0__Port: ${App__DcOptions__0__Port}
+      App__EncryptionConfig__Enabled: ${App__EncryptionConfig__Enabled}
+      App__EncryptionConfig__MessageKeys__0__Id: ${App__EncryptionConfig__MessageKeys__0__Id}
+      App__EncryptionConfig__MessageKeys__0__Key: ${App__EncryptionConfig__MessageKeys__0__Key}
+      App__EncryptionConfig__IndexKeys__0__Id: ${App__EncryptionConfig__IndexKeys__0__Id}
+      App__EncryptionConfig__IndexKeys__0__Key: ${App__EncryptionConfig__IndexKeys__0__Key}
+      RabbitMQ__Connections__Default__HostName: ${RabbitMQ__Connections__Default__HostName:-rabbitmq}
+      RabbitMQ__Connections__Default__Port: ${RabbitMQ__Connections__Default__Port:-5672}
+      RabbitMQ__Connections__Default__UserName: ${RabbitMQ__Connections__Default__UserName:-test}
+      RabbitMQ__Connections__Default__Password: ${RabbitMQ__Connections__Default__Password}
+      RabbitMQ__EventBus__ExchangeName: ${RabbitMQ__EventBus__ExchangeName}
+      App__PrivateKeyFilePath: private.pkcs8.key
+      Redis__Configuration: ${Redis__Configuration}
+    volumes:
+      - ./data/mytelegram/auth/logs:/app/Logs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ### 3.Session server
+  # Not built by this fork's CI (no source/Dockerfile in this repo) - pulled from
+  # the upstream MyTelegram registry.
+  session-server:
+    image: ${MyTelegramRegistry}/mytelegram-session-server:${MyTelegramVersion}
+    restart: always
+    networks:
+      - tg-net
+    environment:
+      Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default}
+      ConnectionStrings__Default: ${ConnectionStrings__Default}
+      # App__ThisDcId: ${App__ThisDcId}
+      # App__MediaOnly: ${App__MediaOnly}
+      App__DatabaseName: ${App__DatabaseName}
+      App__ReadModelDatabaseName: ${App__ReadModelDatabaseName}
+      App__AccessHashSecretKey: ${App__AccessHashSecretKey}
+      # App__IdGeneratorGrpcServiceUrl: ${App__IdGeneratorGrpcServiceUrl}
+      # App__MessengerServerGrpcServiceUrl: ${App__MessengerServerGrpcServiceUrl}
+      # App__DispatchUnknownObjectToMessengerServer: ${App__DispatchUnknownObjectToMessengerServer}
+      # App__TempAuthKeyExpirationMinutes: ${App__TempAuthKeyExpirationMinutes}
+      # App__CommandServerObjectIds: ${App__CommandServerObjectIds}
+      # Route RTMP/group-call stream RPCs arriving on media auth keys through the
+      # sticker/media lane; query-server converts them back to messenger queries.
+      App__StickerServerObjectIds__0: "447879488" # phone.getGroupCallStreamChannels
+      App__StickerServerObjectIds__1: "1525991226" # phone.getGroupCallStreamRtmpUrl
+      App__StickerServerObjectIds__2: "3193124286" # upload.getFile inputGroupCallStream
+      RabbitMQ__Connections__Default__HostName: ${RabbitMQ__Connections__Default__HostName:-rabbitmq}
+      RabbitMQ__Connections__Default__Port: ${RabbitMQ__Connections__Default__Port:-5672}
+      RabbitMQ__Connections__Default__UserName: ${RabbitMQ__Connections__Default__UserName:-test}
+      RabbitMQ__Connections__Default__Password: ${RabbitMQ__Connections__Default__Password}
+      #RabbitMQ__EventBus__ClientName: ${RabbitMQ__EventBus__ClientName}
+      RabbitMQ__EventBus__ExchangeName: ${RabbitMQ__EventBus__ExchangeName}
+      Redis__Configuration: ${Redis__Configuration}
+    volumes:
+      - ./data/mytelegram/session/logs:/app/Logs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ### 5.Messenger grpc server
+  # messenger-grpc-server:
+  #   image: mytelegram/mytelegram-messenger-grpc-service:${MyTelegramVersion}
+  #   restart: always
+  #   networks:
+  #     - tg-net
+  #   environment:
+  #     Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default}
+  #     ConnectionStrings__Default: ${ConnectionStrings__Default}
+  #     App__DatabaseName: ${App__DatabaseName}
+  #     App__BotDatabaseName: ${App__BotDatabaseName}
+  #   volumes:
+  #     - ./data/mytelegram/messenger-grpc-service/logs:/app/Logs
+  #   depends_on:
+  #     - mongodb
+
+  ### 4.File server
+  # Not built by this fork's CI (no source/Dockerfile in this repo) - pulled from
+  # the upstream MyTelegram registry.
+  file-server:
+    image: ${MyTelegramRegistry}/mytelegram-file-server:${MyTelegramVersion}
+    user: "1654"
+    entrypoint: ["/app/MyTelegram.FileServer"]
+    restart: always
+    networks:
+      - tg-net
+    volumes:
+      - ./data/mytelegram/file/uploads:/app/uploads
+      - ./data/mytelegram/file:/app/Logs
+    environment:
+      Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default}
+      ConnectionStrings__Default: ${ConnectionStrings__Default}
+      App__DatabaseName: ${App__DatabaseName}
+      App__ReadModelDatabaseName: ${App__ReadModelDatabaseName}
+      App__AccessHashSecretKey: ${App__AccessHashSecretKey}
+      # App__ThisDcId: ${App__ThisDcId}
+      # App__MediaDcId: ${App__MediaDcId}
+      # App__UploadRootPath: ${App__UploadRootPath}
+      # Route file-server through the 416-neutralising proxy (see minio-proxy service)
+      # to work around the NullReferenceException bug in its bundled MinIO SDK.
+      Minio__Endpoint: ${Minio__FileServerEndpoint:-minio-proxy:9000}
+      Minio__AccessKey: ${Minio__AccessKey}
+      Minio__SecretKey: ${Minio__SecretKey}
+      Minio__BucketName: ${Minio__BucketName:-tg-files}
+      Minio__CreateBucketIfNotExists: ${Minio__CreateBucketIfNotExists:-True}
+      RabbitMQ__Connections__Default__HostName: ${RabbitMQ__Connections__Default__HostName:-rabbitmq}
+      RabbitMQ__Connections__Default__Port: ${RabbitMQ__Connections__Default__Port:-5672}
+      RabbitMQ__Connections__Default__UserName: ${RabbitMQ__Connections__Default__UserName:-test}
+      RabbitMQ__Connections__Default__Password: ${RabbitMQ__Connections__Default__Password}
+      RabbitMQ__EventBus__ClientName: MyTelegramFileServerRaw
+      RabbitMQ__EventBus__ExchangeName: ${RabbitMQ__EventBus__ExchangeName}
+      Redis__Configuration: ${Redis__Configuration}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio-proxy:
+        condition: service_started
+
+  ### 5.Messenger command server
+  messenger-command-server:
+    image: ${TestgramRegistry}/mytelegram-messenger-command-server:${TestgramVersion}
+    restart: always
+    networks:
+      - tg-net
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      call-init:
+        condition: service_completed_successfully
+      business-init:
+        condition: service_completed_successfully
+      botfather-init:
+        condition: service_completed_successfully
+    environment:
+      Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default}
+      ConnectionStrings__Default: ${ConnectionStrings__Default}
+      App__Brand: ${App__Brand:-Testgram}
+      App__WelcomeMsg: ${App__WelcomeMsg:-Welcome to Testgram! Your account has been created.}
+      App__DatabaseName: ${App__DatabaseName}
+      App__ReadModelDatabaseName: ${App__ReadModelDatabaseName}
+      App__AccessHashSecretKey: ${App__AccessHashSecretKey}
+      App__FileServerGrpcServiceUrl: ${App__FileServerGrpcServiceUrl}
+      App__FixedVerifyCode: ${App__FixedVerifyCode}
+      App__VerificationCodeLength: ${App__VerificationCodeLength}
+      App__VerificationCodeExpirationSeconds: ${App__VerificationCodeExpirationSeconds}
+      App__CheckPhoneNumberFormat: ${App__CheckPhoneNumberFormat}
+      App__EnableSearchNonContacts: ${App__EnableSearchNonContacts}
+      App__SendWelcomeMessageAfterUserSignIn: ${App__SendWelcomeMessageAfterUserSignIn:-False}
+      App__ProtectedUsernames__0: ${App__ProtectedUsernames__0:-admin}
+      App__ProtectedUsernames__1: ${App__ProtectedUsernames__1:-botfather}
+      App__ProtectedUsernames__2: ${App__ProtectedUsernames__2:-support}
+      App__ProtectedUsernames__3: ${App__ProtectedUsernames__3:-telegram}
+      App__EncryptionConfig__Enabled: ${App__EncryptionConfig__Enabled}
+      App__EncryptionConfig__MessageKeys__0__Id: ${App__EncryptionConfig__MessageKeys__0__Id}
+      App__EncryptionConfig__MessageKeys__0__Key: ${App__EncryptionConfig__MessageKeys__0__Key}
+      App__EncryptionConfig__IndexKeys__0__Id: ${App__EncryptionConfig__IndexKeys__0__Id}
+      App__EncryptionConfig__IndexKeys__0__Key: ${App__EncryptionConfig__IndexKeys__0__Key}
+      # App__JoinChatDomain: ${App__JoinChatDomain}
+      # App__ChannelGetDifferenceIntervalSeconds: ${App__ChannelGetDifferenceIntervalSeconds}
+      # App__UseInMemoryFilters: ${App__UseInMemoryFilters}
+      # App__IsMediaDc: ${App__IsMediaDc}
+      # App__AutoCreateSuperGroup: ${App__AutoCreateSuperGroup}
+      # App__EnableFutureAuthToken: ${App__EnableFutureAuthToken}
+      # App__SetPremiumToTrueAfterUserCreated: ${App__SetPremiumToTrueAfterUserCreated}
+      # App__SendWelcomeMessageAfterUserSignIn: ${App__SendWelcomeMessageAfterUserSignIn}
+      App__WebRtcConnections__0__Ip: ${App__WebRtcConnections__0__Ip}
+      App__WebRtcConnections__0__Port: ${App__WebRtcConnections__0__Port}
+      App__WebRtcConnections__0__Turn: ${App__WebRtcConnections__0__Turn}
+      App__WebRtcConnections__0__Stun: ${App__WebRtcConnections__0__Stun}
+      App__WebRtcConnections__0__UserName: ${App__WebRtcConnections__0__UserName}
+      App__WebRtcConnections__0__Password: ${App__WebRtcConnections__0__Password}
+      App__RtmpStreamUrl: ${App__RtmpStreamUrl}
+      App__RtmpHlsUrl: ${App__RtmpHlsUrl}
+      App__PasskeyRpId: ${App__PasskeyRpId}
+      App__PasskeyRpName: ${App__PasskeyRpName}
+      App__Stripe__PublishableKey: ${App__Stripe__PublishableKey}
+      App__Stripe__SecretKey: ${App__Stripe__SecretKey}
+      EmailSenderOptions__Enabled: ${EmailSenderOptions__Enabled}
+      EmailSenderOptions__FromAddress: ${EmailSenderOptions__FromAddress}
+      EmailSenderOptions__FromDisplayName: ${EmailSenderOptions__FromDisplayName}
+      EmailSenderOptions__SmtpEmailOptions__Host: ${EmailSenderOptions__SmtpEmailOptions__Host}
+      EmailSenderOptions__SmtpEmailOptions__Port: ${EmailSenderOptions__SmtpEmailOptions__Port}
+      EmailSenderOptions__SmtpEmailOptions__UserName: ${EmailSenderOptions__SmtpEmailOptions__UserName}
+      EmailSenderOptions__SmtpEmailOptions__Password: ${EmailSenderOptions__SmtpEmailOptions__Password}
+      EmailSenderOptions__SmtpEmailOptions__EnableSsl: ${EmailSenderOptions__SmtpEmailOptions__EnableSsl}
+      # App__ThisDcId: ${App__ThisDcId}
+      # Full datacenter list (see messenger-query-server for the rationale): DC1-5 must all
+      # resolve to THIS server so clients never fall back to a built-in foreign DC address.
+      # Ports must be live TCP MTProto listeners (20543/20643/20644).
+      App__DcOptions__0__Enabled: "True"
+      App__DcOptions__0__Id: "1"
+      App__DcOptions__0__IpAddress: ${App__DcOptions__0__IpAddress}
+      App__DcOptions__0__Port: "20543"
+      App__DcOptions__0__MediaOnly: "False"
+
+      App__DcOptions__1__Enabled: "True"
+      App__DcOptions__1__Id: "2"
+      App__DcOptions__1__IpAddress: ${App__DcOptions__1__IpAddress}
+      App__DcOptions__1__Port: "20644"
+      App__DcOptions__1__MediaOnly: "False"
+
+      App__DcOptions__2__Enabled: "True"
+      App__DcOptions__2__Id: "3"
+      App__DcOptions__2__IpAddress: ${App__DcOptions__2__IpAddress}
+      App__DcOptions__2__Port: "20643"
+      App__DcOptions__2__MediaOnly: "False"
+
+      App__DcOptions__3__Enabled: "True"
+      App__DcOptions__3__Id: "4"
+      App__DcOptions__3__IpAddress: ${App__DcOptions__3__IpAddress}
+      App__DcOptions__3__Port: "20644"
+      App__DcOptions__3__MediaOnly: "False"
+
+      App__DcOptions__4__Enabled: "True"
+      App__DcOptions__4__Id: "5"
+      App__DcOptions__4__IpAddress: ${App__DcOptions__0__IpAddress}
+      App__DcOptions__4__Port: "20543"
+      App__DcOptions__4__MediaOnly: "False"
+      RabbitMQ__Connections__Default__HostName: ${RabbitMQ__Connections__Default__HostName:-rabbitmq}
+      RabbitMQ__Connections__Default__Port: ${RabbitMQ__Connections__Default__Port:-5672}
+      RabbitMQ__Connections__Default__UserName: ${RabbitMQ__Connections__Default__UserName:-test}
+      RabbitMQ__Connections__Default__Password: ${RabbitMQ__Connections__Default__Password}
+      RabbitMQ__EventBus__ClientName: MyTelegramMessengerCommandServer
+      RabbitMQ__EventBus__ExchangeName: ${RabbitMQ__EventBus__ExchangeName}
+      Redis__Configuration: ${Redis__Configuration}
+    volumes:
+      - ./data/mytelegram/command-server/logs:/app/Logs
+
+  ### 6.Messenger query server
+  messenger-query-server:
+    image: ${TestgramRegistry}/mytelegram-messenger-query-server:${TestgramVersion}
+    restart: always
+    networks:
+      - tg-net
+    environment:
+      Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default}
+      ConnectionStrings__Default: ${ConnectionStrings__Default}
+      App__Brand: ${App__Brand:-Testgram}
+      App__DatabaseName: ${App__DatabaseName}
+      App__ReadModelDatabaseName: ${App__ReadModelDatabaseName}
+      App__AccessHashSecretKey: ${App__AccessHashSecretKey}
+      App__FileServerGrpcServiceUrl: ${App__FileServerGrpcServiceUrl}
+      App__FixedVerifyCode: ${App__FixedVerifyCode}
+      App__VerificationCodeLength: ${App__VerificationCodeLength}
+      App__VerificationCodeExpirationSeconds: ${App__VerificationCodeExpirationSeconds}
+      App__EnableSearchNonContacts: ${App__EnableSearchNonContacts}
+      App__ProtectedUsernames__0: ${App__ProtectedUsernames__0:-admin}
+      App__ProtectedUsernames__1: ${App__ProtectedUsernames__1:-botfather}
+      App__ProtectedUsernames__2: ${App__ProtectedUsernames__2:-support}
+      App__ProtectedUsernames__3: ${App__ProtectedUsernames__3:-telegram}
+      App__EncryptionConfig__Enabled: ${App__EncryptionConfig__Enabled}
+      App__EncryptionConfig__MessageKeys__0__Id: ${App__EncryptionConfig__MessageKeys__0__Id}
+      App__EncryptionConfig__MessageKeys__0__Key: ${App__EncryptionConfig__MessageKeys__0__Key}
+      App__EncryptionConfig__IndexKeys__0__Id: ${App__EncryptionConfig__IndexKeys__0__Id}
+      App__EncryptionConfig__IndexKeys__0__Key: ${App__EncryptionConfig__IndexKeys__0__Key}
+      # App__JoinChatDomain: ${App__JoinChatDomain}
+      # App__ChannelGetDifferenceIntervalSeconds: ${App__ChannelGetDifferenceIntervalSeconds}
+      # App__UseInMemoryFilters: ${App__UseInMemoryFilters}
+      # App__IsMediaDc: ${App__IsMediaDc}
+      # App__AutoCreateSuperGroup: ${App__AutoCreateSuperGroup}
+      # App__EnableFutureAuthToken: ${App__EnableFutureAuthToken}
+      # App__SetPremiumToTrueAfterUserCreated: ${App__SetPremiumToTrueAfterUserCreated}
+      # App__SendWelcomeMessageAfterUserSignIn: ${App__SendWelcomeMessageAfterUserSignIn}
+      App__WebRtcConnections__0__Ip: ${App__WebRtcConnections__0__Ip}
+      App__WebRtcConnections__0__Port: ${App__WebRtcConnections__0__Port}
+      App__WebRtcConnections__0__Turn: ${App__WebRtcConnections__0__Turn}
+      App__WebRtcConnections__0__Stun: ${App__WebRtcConnections__0__Stun}
+      App__WebRtcConnections__0__UserName: ${App__WebRtcConnections__0__UserName}
+      App__WebRtcConnections__0__Password: ${App__WebRtcConnections__0__Password}
+      App__RtmpStreamUrl: ${App__RtmpStreamUrl}
+      App__RtmpHlsUrl: ${App__RtmpHlsUrl}
+      App__PasskeyRpId: ${App__PasskeyRpId}
+      App__PasskeyRpName: ${App__PasskeyRpName}
+      App__Stripe__PublishableKey: ${App__Stripe__PublishableKey}
+      App__Stripe__SecretKey: ${App__Stripe__SecretKey}
+      EmailSenderOptions__Enabled: ${EmailSenderOptions__Enabled}
+      EmailSenderOptions__FromAddress: ${EmailSenderOptions__FromAddress}
+      EmailSenderOptions__FromDisplayName: ${EmailSenderOptions__FromDisplayName}
+      EmailSenderOptions__SmtpEmailOptions__Host: ${EmailSenderOptions__SmtpEmailOptions__Host}
+      EmailSenderOptions__SmtpEmailOptions__Port: ${EmailSenderOptions__SmtpEmailOptions__Port}
+      EmailSenderOptions__SmtpEmailOptions__UserName: ${EmailSenderOptions__SmtpEmailOptions__UserName}
+      EmailSenderOptions__SmtpEmailOptions__Password: ${EmailSenderOptions__SmtpEmailOptions__Password}
+      EmailSenderOptions__SmtpEmailOptions__EnableSsl: ${EmailSenderOptions__SmtpEmailOptions__EnableSsl}
+      # App__ThisDcId: ${App__ThisDcId}
+      # Full datacenter list advertised to clients via help.getConfig. Every DC the official
+      # client knows about (1-5) MUST be listed here and point at THIS server, otherwise the
+      # client falls back to its built-in (foreign) address for any missing DC - e.g. DC4 ->
+      # 194.221.250.50 - whose RSA key it doesn't have ("could not choose public RSA key").
+      # Ports must be live TCP MTProto listeners on the gateway (20543/20643/20644);
+      # 20443 is not listened and 30443/30444 are HTTPS (web) endpoints.
+      App__DcOptions__0__Enabled: "True"
+      App__DcOptions__0__Id: "1"
+      App__DcOptions__0__IpAddress: ${App__DcOptions__0__IpAddress}
+      App__DcOptions__0__Port: "20543"
+      App__DcOptions__0__MediaOnly: "False"
+
+      App__DcOptions__1__Enabled: "True"
+      App__DcOptions__1__Id: "2"
+      App__DcOptions__1__IpAddress: ${App__DcOptions__1__IpAddress}
+      App__DcOptions__1__Port: "20644"
+      App__DcOptions__1__MediaOnly: "False"
+
+      App__DcOptions__2__Enabled: "True"
+      App__DcOptions__2__Id: "3"
+      App__DcOptions__2__IpAddress: ${App__DcOptions__2__IpAddress}
+      App__DcOptions__2__Port: "20643"
+      App__DcOptions__2__MediaOnly: "False"
+
+      App__DcOptions__3__Enabled: "True"
+      App__DcOptions__3__Id: "4"
+      App__DcOptions__3__IpAddress: ${App__DcOptions__3__IpAddress}
+      App__DcOptions__3__Port: "20644"
+      App__DcOptions__3__MediaOnly: "False"
+
+      App__DcOptions__4__Enabled: "True"
+      App__DcOptions__4__Id: "5"
+      App__DcOptions__4__IpAddress: ${App__DcOptions__0__IpAddress}
+      App__DcOptions__4__Port: "20543"
+      App__DcOptions__4__MediaOnly: "False"
+      RabbitMQ__Connections__Default__HostName: ${RabbitMQ__Connections__Default__HostName:-rabbitmq}
+      RabbitMQ__Connections__Default__Port: ${RabbitMQ__Connections__Default__Port:-5672}
+      RabbitMQ__Connections__Default__UserName: ${RabbitMQ__Connections__Default__UserName:-test}
+      RabbitMQ__Connections__Default__Password: ${RabbitMQ__Connections__Default__Password}
+      RabbitMQ__EventBus__ClientName: MyTelegramMessengerQueryServer
+      RabbitMQ__EventBus__ExchangeName: ${RabbitMQ__EventBus__ExchangeName}
+      Redis__Configuration: ${Redis__Configuration}
+      MYTELEGRAM_GEOIP_COUNTRY_DB: ${MYTELEGRAM_GEOIP_COUNTRY_DB:-/geoip/GeoLite2-City.mmdb}
+    volumes:
+      - ./data/mytelegram/query-server/logs:/app/Logs
+      - ./update.json:/app/update.json:ro
+      - ./geoip:/geoip:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  ### 7.Sms sender
+  sms-sender:
+    image: ${TestgramRegistry}/mytelegram-sms-sender:${TestgramVersion}
+    restart: always
+    networks:
+      - tg-net
+    environment:
+      Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default}
+      App__Brand: ${App__Brand:-Testgram}
+      TwilioSms__Enabled: ${TwilioSms__Enabled}
+      TwilioSms__AccountSId: ${TwilioSms__AccountSId}
+      TwilioSms__AuthToken: ${TwilioSms__AuthToken}
+      TwilioSms__FromNumber: ${TwilioSms__FromNumber}
+      TwilioSms__MessagingServiceSId: ${TwilioSms__MessagingServiceSId}
+      # VonageSms__Enabled: ${VonageSms__Enabled}
+      # VonageSms__BrandName: ${VonageSms__BrandName}
+      # VonageSms__ApiKey: ${VonageSms__ApiKey}
+      # VonageSms__ApiSecret: ${VonageSms__ApiSecret}
+      RabbitMQ__Connections__Default__HostName: ${RabbitMQ__Connections__Default__HostName:-rabbitmq}
+      RabbitMQ__Connections__Default__Port: ${RabbitMQ__Connections__Default__Port:-5672}
+      RabbitMQ__Connections__Default__UserName: ${RabbitMQ__Connections__Default__UserName:-test}
+      RabbitMQ__Connections__Default__Password: ${RabbitMQ__Connections__Default__Password}
+      #RabbitMQ__EventBus__ClientName: ${RabbitMQ__EventBus__ClientName}
+      RabbitMQ__EventBus__ExchangeName: ${RabbitMQ__EventBus__ExchangeName}
+      TelegramBotSms__Enabled: "true"
+      TelegramBotSms__SenderApiUrl: http://bot:5005/send
+    volumes:
+      - ./data/mytelegram/sms-sender/logs:/app/Logs
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  ### FamilyGram Web (telegram-tt SPA + nginx, proxies /apiws to gateway-server)
+  familygram-web:
+    build:
+      context: ../../web
+      dockerfile: Dockerfile
+      args:
+        TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+        TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+        PRODUCTION_HOSTNAME: ${WEB_DOMAIN}
+        BASE_URL: ${WEB_BASE_URL}
+        APP_NAME: ${WEB_APP_NAME:-FamilyGram Web}
+        APP_TITLE: ${WEB_APP_TITLE:-FamilyGram}
+    image: ${FamilygramWebImage:-familygram/familygram-web:local}
+    restart: always
+    networks:
+      - tg-net
+    ports:
+      - "${WEB_HOST_PORT:-8082}:${WEB_CONTAINER_PORT:-8082}"
+    environment:
+      GATEWAY_UPSTREAM: gateway-server:${App__Servers__5__Port:-30444}
+      LISTEN_PORT: ${WEB_CONTAINER_PORT:-8082}
+    depends_on:
+      gateway-server:
+        condition: service_started
+      # Soft dependency only: if BOT_TOKEN isn't configured yet, the bot container
+      # keeps restarting and never reports healthy. sms-sender must still start -
+      # TelegramBotSmsSender already logs and swallows failures when bot is
+      # unreachable, so a hard service_healthy dependency here would block the
+      # whole stack on the bot being configured.
+      bot:
+        condition: service_started
+
+  ### 8.Verification bot (delivers login codes to Telegram accounts that linked a phone number)
+  bot:
+    image: ${TestgramRegistry}/testgram-bot:${TestgramVersion}
+    restart: always
+    networks:
+      - tg-net
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      BOT_TOKEN1: ${BOT_TOKEN1:-}
+      BOT_TOKEN2: ${BOT_TOKEN2:-}
+      PROXY_URL: ${PROXY_URL:-}
+      DB_PATH: /data/codes.db
+      ENABLE_RABBITMQ_CONSUMER: ${ENABLE_RABBITMQ_CONSUMER:-false}
+      RABBITMQ_URL: amqp://${RabbitMQ__Connections__Default__UserName:-test}:${RabbitMQ__Connections__Default__Password}@rabbitmq/
+    volumes:
+      - ./data/bot:/data
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('localhost', 5005), 2)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  ### FamilyGram Web (telegram-tt SPA + nginx, proxies /apiws to gateway-server)
+  familygram-web:
+    build:
+      context: ../../web
+      dockerfile: Dockerfile
+      args:
+        TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+        TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+        PRODUCTION_HOSTNAME: ${WEB_DOMAIN}
+        BASE_URL: ${WEB_BASE_URL}
+        APP_NAME: ${WEB_APP_NAME:-FamilyGram Web}
+        APP_TITLE: ${WEB_APP_TITLE:-FamilyGram}
+    image: ${FamilygramWebImage:-familygram/familygram-web:local}
+    restart: always
+    networks:
+      - tg-net
+    ports:
+      - "${WEB_HOST_PORT:-8082}:${WEB_CONTAINER_PORT:-8082}"
+    environment:
+      GATEWAY_UPSTREAM: gateway-server:${App__Servers__5__Port:-30444}
+      LISTEN_PORT: ${WEB_CONTAINER_PORT:-8082}
+    depends_on:
+      gateway-server:
+        condition: service_started

@@ -1,0 +1,9 @@
+node_modules
+dist
+.git
+.env
+.env.production
+*.log
+.codex-vite-html.log
+.codex-vite-html.err.log
+familygram-web-dist.tar.gz

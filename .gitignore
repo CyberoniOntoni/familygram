@@ -1,0 +1,10 @@
+docker/compose/.env
+docker/compose/.env.local
+docker/compose/data/
+docker/compose/geoip/*.mmdb
+deploy/last-install-config.txt
+web/node_modules/
+web/dist/
+web/.env
+web/.env.production
+*.tar.gz
