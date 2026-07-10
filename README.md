@@ -24,7 +24,7 @@ The wizard collects:
 - Login verification: **@BotFather bot** (unique codes per user) **or fixed login code** (same code for everyone — no bot)
 - Optional passkey domain and RTMP ports
 
-Then it clones this repo to `/opt/familygram`, writes `docker/compose/.env`, and starts the stack.
+Then it installs prerequisites (apt packages, Docker, Node.js 24 via nvm when the web client is enabled), clones this repo to `/opt/familygram`, writes `docker/compose/.env`, and starts the stack.
 
 ### Non-interactive
 

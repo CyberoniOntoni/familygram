@@ -31,7 +31,7 @@
 #   --help               show help
 set -euo pipefail
 
-INSTALLER_VERSION="4.1.0"
+INSTALLER_VERSION="4.2.0"
 
 REPO_URL="${REPO_URL:-https://github.com/CyberoniOntoni/familygram.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"

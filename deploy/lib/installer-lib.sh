@@ -409,13 +409,110 @@ install_system_deps() {
     export DEBIAN_FRONTEND=noninteractive
     log "Installing system packages (apt)..."
     apt-get update -qq
-    apt-get install -y -qq ca-certificates curl git gnupg openssl iproute2
+    apt-get install -y -qq \
+      ca-certificates curl wget git gnupg openssl iproute2 apt-transport-https
     if is_yes "${DO_FIREWALL}"; then
       apt-get install -y -qq ufw || warn "UFW not available — skipping firewall packages"
     fi
     return 0
   fi
-  warn "apt-get not found — ensure curl, git, and openssl are installed"
+  warn "apt-get not found — ensure curl, wget, git, and openssl are installed"
+}
+
+node_major_version() {
+  local ver major
+  if ! command -v node >/dev/null 2>&1; then
+    printf '0'
+    return 0
+  fi
+  ver="$(node -v 2>/dev/null || true)"
+  ver="${ver#v}"
+  major="${ver%%.*}"
+  if [[ "$major" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$major"
+  else
+    printf '0'
+  fi
+}
+
+load_nvm() {
+  export NVM_DIR="${NVM_DIR:-/root/.nvm}"
+  if [[ -s "${NVM_DIR}/nvm.sh" ]]; then
+    # shellcheck source=/dev/null
+    . "${NVM_DIR}/nvm.sh"
+    return 0
+  fi
+  return 1
+}
+
+install_nvm_node() {
+  local nvm_version="0.40.5"
+  local node_version="24"
+  export NVM_DIR="${NVM_DIR:-/root/.nvm}"
+
+  if [[ ! -s "${NVM_DIR}/nvm.sh" ]]; then
+    log "Installing nvm ${nvm_version}..."
+    curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/v${nvm_version}/install.sh" | bash
+  else
+    log "nvm already present at ${NVM_DIR}"
+  fi
+
+  load_nvm || die "nvm failed to load from ${NVM_DIR}/nvm.sh"
+
+  log "Installing Node.js ${node_version} via nvm (package requires ^22.6 or ^24)..."
+  nvm install "${node_version}"
+  nvm alias default "${node_version}"
+  nvm use default
+
+  local node_bin npm_bin npx_bin
+  node_bin="$(nvm which current)"
+  npm_bin="$(dirname "${node_bin}")/npm"
+  npx_bin="$(dirname "${node_bin}")/npx"
+  ln -sf "${node_bin}" /usr/local/bin/node
+  ln -sf "${npm_bin}" /usr/local/bin/npm
+  ln -sf "${npx_bin}" /usr/local/bin/npx
+
+  cat > /etc/profile.d/familygram-nvm.sh <<EOF
+# FamilyGram installer — load nvm Node.js for login shells
+export NVM_DIR="${NVM_DIR}"
+[ -s "\$NVM_DIR/nvm.sh" ] && . "\$NVM_DIR/nvm.sh"
+EOF
+  chmod 644 /etc/profile.d/familygram-nvm.sh
+}
+
+ensure_nodejs() {
+  local major required_major=22
+  major="$(node_major_version)"
+
+  if (( major >= required_major )); then
+    log "Node.js OK: $(node -v) (npm $(npm -v 2>/dev/null || echo n/a))"
+    return 0
+  fi
+
+  if (( major > 0 )); then
+    warn "Node.js v${major}.x is too old (need ^22.6) — upgrading via nvm"
+  else
+    log "Node.js not found — installing via nvm"
+  fi
+
+  install_nvm_node
+
+  major="$(node_major_version)"
+  if (( major < required_major )); then
+    die "Node.js install failed — still at $(node -v 2>/dev/null || echo missing)"
+  fi
+  log "Node.js ready: $(node -v) (npm $(npm -v))"
+}
+
+install_prerequisites() {
+  install_system_deps
+  if [[ "${ENABLE_WEB}" == "yes" ]]; then
+    ensure_nodejs
+  else
+    log "Skipping Node.js check (FamilyGram Web disabled)"
+  fi
+  install_docker
+  ensure_compose
 }
 
 install_docker() {
@@ -817,6 +914,7 @@ run_install_wizard() {
     "  • Login verification: @BotFather bot token OR a fixed login code" \
     "  • Telegram API id + hash from my.telegram.org (web client)" \
     "  • Public web hostname (e.g. web.example.com) if using the web UI" \
+    "  • Node.js 22+ on the host when web is enabled (installer upgrades v20 via nvm)" \
     ""
   ui_printf '%sRules:%s MTProto must go direct to your IP — not through Cloudflare proxy or NPM.\n\n' \
     "${C_YELLOW}" "${C_RESET}"
@@ -922,9 +1020,7 @@ run_install_wizard() {
 }
 
 run_install_apply() {
-  install_system_deps
-  install_docker
-  ensure_compose
+  install_prerequisites
   clone_or_update_repo
 
   cd "${COMPOSE_DIR}"

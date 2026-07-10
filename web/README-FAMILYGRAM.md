@@ -8,7 +8,7 @@ Verified on Testgram layer **224** with login, chats, messaging, and voice/video
 
 ## Requirements
 
-- Node.js 20+ (only for local/manual builds; Docker build uses Node inside the image)
+- Node.js ^22.6 or ^24 (installer installs v24 via nvm when the host has v20 or older; Docker build uses Node 24 inside the image)
 - A running FamilyGram/Testgram stack ([install guide](https://github.com/CyberoniOntoni/familygram))
 - Or Docker Compose from this monorepo (includes nginx + gateway proxy)
 
