@@ -740,31 +740,6 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
-
-  ### FamilyGram Web (telegram-tt SPA + nginx, proxies /apiws to gateway-server)
-  familygram-web:
-    build:
-      context: ../../web
-      dockerfile: Dockerfile
-      args:
-        TELEGRAM_API_ID: ${TELEGRAM_API_ID}
-        TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
-        PRODUCTION_HOSTNAME: ${WEB_DOMAIN}
-        BASE_URL: ${WEB_BASE_URL}
-        APP_NAME: ${WEB_APP_NAME:-FamilyGram Web}
-        APP_TITLE: ${WEB_APP_TITLE:-FamilyGram}
-    image: ${FamilygramWebImage:-familygram/familygram-web:local}
-    restart: always
-    networks:
-      - tg-net
-    ports:
-      - "${WEB_HOST_PORT:-8082}:${WEB_CONTAINER_PORT:-8082}"
-    environment:
-      GATEWAY_UPSTREAM: gateway-server:${App__Servers__5__Port:-30444}
-      LISTEN_PORT: ${WEB_CONTAINER_PORT:-8082}
-    depends_on:
-      gateway-server:
-        condition: service_started
       # Soft dependency only: if BOT_TOKEN isn't configured yet, the bot container
       # keeps restarting and never reports healthy. sms-sender must still start -
       # TelegramBotSmsSender already logs and swallows failures when bot is
