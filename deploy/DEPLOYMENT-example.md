@@ -84,7 +84,7 @@ Optional:
 | 20644 | TCP | MTProto |
 | 5348 | TCP + UDP | STUN/TURN (non-default; avoids Microsoft 3478–3481 range) |
 | 49152–49172 | UDP | TURN relay media |
-| 30443 | TCP | HTTPS web endpoint (optional, passkey) |
+| 30443 | TCP | Passkey HTTPS gateway — **only when WebAuthn/passkey is enabled** |
 | 1935 | TCP | RTMP live (optional) |
 | 8888 | TCP | RTMP HLS (optional) |
 

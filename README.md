@@ -64,11 +64,13 @@ Forward these from the internet to the machine running Docker Compose (defaults 
 | `49152–49172` | UDP | TURN relay media | **Yes** |
 | `443` | TCP | Public HTTPS (Nginx Proxy Manager, Caddy, etc.) | **Yes** for web UI |
 | `8082` | TCP | `familygram-web` directly (skip if using NPM on same host) | See web section |
-| `30443` | TCP | Gateway HTTPS / passkey (WebAuthn) | Optional |
+| `30443` | TCP | Passkey HTTPS gateway (WebAuthn) — **only if passkey enabled** | Passkey only |
 | `1935` | TCP | RTMP live streaming | Optional |
 | `8888` | TCP | RTMP HLS playback | Optional |
 
-**Do not forward** `30444` to the internet. That port is the gateway HTTP/WebSocket transport used **inside** Docker and by `familygram-web` on the Docker network (`gateway-server:30444`). Browsers reach it via same-origin `/apiws` on your web domain, not via a public `:30444` forward.
+**Do not forward** `30444`. It is the gateway HTTP/WebSocket transport on the **Docker network only** (`gateway-server:30444`). The `familygram-web` container proxies `/apiws` to it; browsers never connect to `:30444` on the host.
+
+**Do not forward** `30443` unless you enabled passkey (WebAuthn) in the installer. The default stack keeps both `30443` and `30444` off the host; the installer writes `docker-compose.override.yml` to publish `30443` only when passkey is on.
 
 ### Host firewall (UFW)
 
@@ -78,7 +80,7 @@ If you use the installer with UFW enabled, it opens:
 |------|----------|---------|
 | `22` | TCP | SSH |
 | `20443–20644` | TCP | MTProto (four DC ports) |
-| `30443` | TCP | HTTPS gateway (passkey) |
+| `30443` | TCP | Passkey HTTPS gateway (only if passkey enabled at install) |
 | `5348` | TCP + UDP | STUN/TURN |
 | `49152–49172` | UDP | TURN relay |
 | `8082` | TCP | FamilyGram Web (`WEB_HOST_PORT`) |
@@ -87,7 +89,9 @@ If you use the installer with UFW enabled, it opens:
 Manual check:
 
 ```bash
-ss -lntp | grep -E '20443|20543|20643|20644|30443|5348|8082'
+ss -lntp | grep -E '20443|20543|20643|20644|5348|8082'
+# 30443 appears only when passkey is enabled:
+ss -lntp | grep 30443
 ss -lunp  | grep -E '5348|49152'
 ```
 
@@ -146,6 +150,8 @@ Use HTTPS in production; set `WEB_DOMAIN` to the hostname clients actually use.
 
 **Example — passkey (WebAuthn) on a separate subdomain**
 
+Enable passkey in the installer (or copy `docker-compose.passkey.example.yml` → `docker-compose.override.yml`). That is the **only** reason to expose `30443` on the host.
+
 ```
 DNS:   tg.example.com  →  A  →  203.0.113.50
 NPM:   tg.example.com:443  →  192.168.1.10:30443
@@ -180,6 +186,7 @@ On first `docker compose up`, `familygram-web` runs `npm install` and a producti
 ```bash
 cd /opt/familygram/docker/compose
 cp .env.example .env   # edit secrets, IPs, WEB_DOMAIN, TELEGRAM_API_*
+# Passkey only: cp docker-compose.passkey.example.yml docker-compose.override.yml
 docker compose pull --ignore-buildable
 docker compose build familygram-web
 docker compose up -d

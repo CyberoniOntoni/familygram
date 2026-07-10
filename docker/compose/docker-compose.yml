@@ -242,13 +242,14 @@ services:
     restart: always
     networks:
       - tg-net
+    # MTProto DC ports only on the host. HTTPS gateway (30443) is published via
+    # docker-compose.override.yml when passkey (WebAuthn) is enabled at install.
+    # HTTP/WS gateway (30444) is never published — familygram-web proxies /apiws on tg-net.
     ports:
       - "${App__Servers__0__Port}:${App__Servers__0__Port}"
       - "${App__Servers__1__Port}:${App__Servers__1__Port}"
       - "${App__Servers__2__Port}:${App__Servers__2__Port}"
       - "${App__Servers__3__Port}:${App__Servers__3__Port}"
-      - "${App__Servers__4__Port}:${App__Servers__4__Port}"
-      - "${App__Servers__5__Port}:${App__Servers__5__Port}"
     volumes:
       - ./data/mytelegram/gateway/logs:/app/Logs
     environment:

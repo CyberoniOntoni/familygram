@@ -40,7 +40,7 @@ The container serves static files and proxies `/apiws` to `gateway-server:30444`
 Deploy the `dist/` folder to your web host. Example nginx locations:
 
 - `/` → static files from `dist/`
-- `/apiws`, `/apiw1` → `http://127.0.0.1:30444` (Testgram gateway WebSocket)
+- `/apiws`, `/apiw1` → gateway on Docker network (unified stack: use `familygram-web`; legacy host nginx needs `127.0.0.1:30444` bound locally only)
 
 ## Development
 

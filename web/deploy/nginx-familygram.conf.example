@@ -1,13 +1,14 @@
 # FamilyGram Web — nginx on the Testgram LXC host (same machine as Docker Compose)
 #
-# Testgram gateway-server publishes HTTP web transport on host port 30444.
-# nginx proxies browser /apiws and /apiw1 to 127.0.0.1:30444.
+# Legacy manual nginx deploy. Prefer the unified stack: familygram-web container
+# proxies /apiws to gateway-server:30444 on the Docker network (30444 is NOT on the host).
 #
-# Traffic chain (production):
+# If you still use host nginx, bind gateway 30444 to localhost only in an override, e.g.:
+#   gateway-server ports: "127.0.0.1:30444:30444"
+#
+# Traffic chain (unified stack — recommended):
 #   Browser wss://web.example.com/apiws
-#     → NPM :443 (SSL termination, websockets ON)
-#     → this nginx :8082
-#     → 127.0.0.1:30444 (Docker-published gateway HTTP/WS port)
+#     → NPM :443 → familygram-web :8082 → gateway-server:30444 (Docker internal)
 
 map $http_upgrade $connection_upgrade {
     default upgrade;

@@ -1,0 +1,9 @@
+# Example override — the installer writes docker-compose.override.yml with this
+# content when passkey (WebAuthn) is enabled. Docker Compose merges it automatically.
+#
+# Exposes ONLY the HTTPS gateway (default 30443) for NPM → passkey subdomain.
+# Port 30444 (HTTP/WS) must stay Docker-internal; browsers use /apiws on the web domain.
+services:
+  gateway-server:
+    ports:
+      - "${App__Servers__4__Port:-30443}:${App__Servers__4__Port:-30443}"
