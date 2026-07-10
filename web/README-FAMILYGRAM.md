@@ -61,8 +61,8 @@ cd dist && tar -czf ../familygram-web-dist.tar.gz .
 ```
 
 ```powershell
+$env:FAMILYGRAM_SSH_HOST = 'your.server.example'
 $env:FAMILYGRAM_SSH_PASSWORD = 'your-ssh-password'
-$env:FAMILYGRAM_SSH_HOST = '192.168.11.79'   # optional
 python deploy/deploy-now.py
 ```
 
@@ -70,7 +70,7 @@ Environment variables for `deploy-now.py`:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `FAMILYGRAM_SSH_HOST` | `192.168.11.79` | Web/nginx host |
+| `FAMILYGRAM_SSH_HOST` | — (required) | Web/nginx host |
 | `FAMILYGRAM_SSH_USER` | `root` | SSH user |
 | `FAMILYGRAM_SSH_PASSWORD` | — | Password auth |
 | `FAMILYGRAM_DIST_TAR` | `familygram-web-dist.tar.gz` | Built tarball path |
@@ -110,7 +110,7 @@ Browser → NPM (443) → nginx :8082 → Testgram gateway :30444 (/apiws)
                          dist/ static
 ```
 
-Public URL example: `https://web.50bar.app`
+Public URL example: `https://web.example.com`
 
 ## Related projects
 

@@ -4,10 +4,13 @@ import sys
 
 import paramiko
 
-HOST = os.environ.get('FAMILYGRAM_SSH_HOST', '192.168.11.79')
+HOST = os.environ.get('FAMILYGRAM_SSH_HOST', '')
 USER = os.environ.get('FAMILYGRAM_SSH_USER', 'root')
 PASSWORD = os.environ.get('FAMILYGRAM_SSH_PASSWORD', '')
 
+if not HOST:
+    print('FAMILYGRAM_SSH_HOST not set', file=sys.stderr)
+    sys.exit(1)
 if not PASSWORD:
     print('FAMILYGRAM_SSH_PASSWORD not set', file=sys.stderr)
     sys.exit(1)
@@ -42,8 +45,8 @@ def main() -> int:
         ('AUTH SERVER LOGS (last 80)', 'A=$(docker ps --format "{{.Names}}" | grep -i auth-server | head -1); echo "container=$A"; docker logs --tail 80 "$A" 2>&1'),
         ('MESSENGER auth/errors (last 50)', 'M=$(docker ps --format "{{.Names}}" | grep -i messenger | head -1); echo "container=$M"; docker logs --tail 300 "$M" 2>&1 | grep -iE "error|exception|fail|sendcode|auth|layer" | tail -50'),
         ('SESSION SERVER LOGS (last 40)', 'S=$(docker ps --format "{{.Names}}" | grep -i session | head -1); echo "container=$S"; docker logs --tail 40 "$S" 2>&1'),
-        ('TESTGRAM ENV', 'grep -E "FixedVerifyCode|VerificationCodeLength|ApiId|ApiHash" /opt/testgram/docker/compose/.env 2>/dev/null | head -15'),
-        ('LOCAL MTProto probe', 'node /opt/familygram-web/deploy/mtproto-handshake-probe.cjs ws://127.0.0.1:30444/apiws 2>&1 || node /opt/testgram/deploy/mtproto-handshake-probe.cjs ws://127.0.0.1:30444/apiws 2>&1 || echo "no probe script on server"'),
+        ('FAMILYGRAM ENV', 'grep -E "FixedVerifyCode|VerificationCodeLength|TELEGRAM_API_ID|TELEGRAM_API_HASH" /opt/familygram/docker/compose/.env 2>/dev/null | head -15'),
+        ('LOCAL MTProto probe', 'node /opt/familygram/web/deploy/mtproto-handshake-probe.cjs ws://127.0.0.1:30444/apiws 2>&1 || echo "no probe script on server"'),
         ('DEPLOYED WEB ASSETS', 'ls -la /opt/familygram-web/dist/assets/index-*.js /opt/familygram-web/dist/worker-*.js 2>/dev/null | tail -5'),
     ]
 

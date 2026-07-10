@@ -69,7 +69,7 @@ Optional:
 ### Accounts & services
 
 - GitHub access to pull images from `ghcr.io/cyberoniontoni/testgram`
-- Telegram account + [@BotFather](https://t.me/BotFather) bot token
+- Login verification: [@BotFather](https://t.me/BotFather) bot token **or** a fixed login code (installer prompts; fixed code skips the bot)
 - Cloudflare account with `acmechat.example` (free tier, optional but recommended for passkey)
 - Router admin access for port forwarding
 - (Optional) Nginx Proxy Manager at `192.168.1.11`
@@ -193,7 +193,7 @@ The installer:
 
 - Installs Docker and dependencies
 - Clones/updates the `dev` branch to `/opt/testgram`
-- Prompts for WAN IP, LAN IP, ports, brand, passkey domain, and `BOT_TOKEN`
+- Prompts for WAN IP, LAN IP, ports, brand, passkey domain, and login verification (`BOT_TOKEN` or fixed code)
 - Creates `.env` from `.env.example` with auto-generated secrets
 - Patches Coturn ports/credentials in `docker-compose.yml` to match your choices
 - Configures UFW (MTProto, STUN/TURN on **5348** by default, relay ports)
@@ -284,7 +284,9 @@ Template: `docker/compose/.env.deployment.example` (already filled with your IPs
 | `App__AccessHashSecretKey` | `openssl rand -hex 32` |
 | `App__EncryptionConfig__MessageKeys__0__Key` | `openssl rand -base64 32` |
 | `App__EncryptionConfig__IndexKeys__0__Key` | `openssl rand -base64 32` |
-| `BOT_TOKEN` | Token from @BotFather |
+| `BOT_TOKEN` | Token from @BotFather (optional if `App__FixedVerifyCode` is set) |
+| `App__FixedVerifyCode` | Same login code for every user (private/lab; disables bot SMS) |
+| `TelegramBotSms__Enabled` | `true` with @BotFather; `false` with fixed code |
 
 ### Already correct (do not change unless your IP changes)
 

@@ -15,7 +15,7 @@ export const APP_NAME = import.meta.env.TG_APP_NAME || (
 );
 
 export const PRODUCTION_HOSTNAME = import.meta.env.TG_PRODUCTION_HOSTNAME || (
-  IS_FAMILYGRAM ? 'web.50bar.app' : 'web.telegram.org'
+  IS_FAMILYGRAM ? 'web.example.com' : 'web.telegram.org'
 );
 export const PRODUCTION_URL = IS_FAMILYGRAM ? '/' : 'https://web.telegram.org/a';
 export const WEB_VERSION_BASE = 'https://web.telegram.org/'; // Used to redirect to other versions

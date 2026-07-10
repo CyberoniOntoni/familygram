@@ -6,10 +6,10 @@ import time
 
 import paramiko
 
-HOST = os.environ.get('FAMILYGRAM_SSH_HOST', '192.168.11.79')
+HOST = os.environ.get('FAMILYGRAM_SSH_HOST', '')
 USER = os.environ.get('FAMILYGRAM_SSH_USER', 'root')
 PASSWORD = os.environ.get('FAMILYGRAM_SSH_PASSWORD', '')
-COMPOSE_DIR = '/opt/testgram/docker/compose'
+COMPOSE_DIR = os.environ.get('FAMILYGRAM_COMPOSE_DIR', '/opt/familygram/docker/compose')
 
 
 def run(client: paramiko.SSHClient, cmd: str, timeout: int = 600) -> tuple[int, str, str]:
@@ -21,6 +21,9 @@ def run(client: paramiko.SSHClient, cmd: str, timeout: int = 600) -> tuple[int, 
 
 
 def main() -> int:
+    if not HOST:
+        print('FAMILYGRAM_SSH_HOST not set', file=sys.stderr)
+        return 1
     if not PASSWORD:
         print('Set FAMILYGRAM_SSH_PASSWORD', file=sys.stderr)
         return 1
@@ -103,7 +106,7 @@ echo "RESET_DONE"
         print('Reset may have failed', file=sys.stderr)
         return code or 1
 
-    print('\nDatabase reset complete. Re-login with phone + code 280963 and clear site data for web.50bar.app.')
+    print('\nDatabase reset complete. Re-login with your phone and verification code, then clear site data for your web URL.')
     return 0
 
 

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import paramiko
 
-HOST = os.environ.get('FAMILYGRAM_SSH_HOST', '192.168.11.79')
+HOST = os.environ.get('FAMILYGRAM_SSH_HOST', '')
 USER = os.environ.get('FAMILYGRAM_SSH_USER', 'root')
 SRC_ROOT = Path(__file__).resolve().parent.parent
 REMOTE_SRC = '/opt/familygram-web-src'
@@ -18,6 +18,9 @@ REMOTE_DIST = '/opt/familygram-web/dist'
 
 
 def main() -> int:
+    if not HOST:
+        print('FAMILYGRAM_SSH_HOST not set', file=sys.stderr)
+        return 1
     password = os.environ.get('FAMILYGRAM_SSH_PASSWORD') or getpass.getpass(f'{USER}@{HOST} password: ')
 
     excludes = {'node_modules', '.git', '.cache', 'dist'}

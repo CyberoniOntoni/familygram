@@ -1,6 +1,6 @@
 #!/bin/bash
-# Deploy FamilyGram Web (telegram-tt) on the Testgram LXC host.
-# Run as root on 192.168.11.79 after syncing source to /opt/familygram-web-src
+# Deploy FamilyGram Web (telegram-tt) on the FamilyGram host (legacy manual nginx path).
+# Run as root on the server after syncing source to /opt/familygram-web-src
 
 set -euo pipefail
 

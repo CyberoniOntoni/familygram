@@ -4,7 +4,7 @@
 # nginx proxies browser /apiws and /apiw1 to 127.0.0.1:30444.
 #
 # Traffic chain (production):
-#   Browser wss://web.50bar.app/apiws
+#   Browser wss://web.example.com/apiws
 #     → NPM :443 (SSL termination, websockets ON)
 #     → this nginx :8082
 #     → 127.0.0.1:30444 (Docker-published gateway HTTP/WS port)

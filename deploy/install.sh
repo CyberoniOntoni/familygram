@@ -5,8 +5,12 @@
 #   curl -fsSL https://raw.githubusercontent.com/CyberoniOntoni/familygram/main/deploy/install.sh -o install.sh
 #   sudo bash install.sh
 #
-# Non-interactive:
+# Non-interactive (BotFather):
 #   PUBLIC_IP=1.2.3.4 LAN_IP=192.168.1.10 BOT_TOKEN='123:ABC' \
+#     sudo bash install.sh --non-interactive --start
+#
+# Non-interactive (fixed login code — no @BotFather):
+#   PUBLIC_IP=1.2.3.4 LAN_IP=192.168.1.10 FIXED_VERIFY_CODE=12345 \
 #     sudo bash install.sh --non-interactive --start
 #
 # Options:
@@ -18,7 +22,8 @@
 #   --lan-ip IP          set LAN_IP
 #   --brand NAME         set App__Brand
 #   --passkey-domain D   set passkey domain
-#   --bot-token TOKEN    set BOT_TOKEN
+#   --bot-token TOKEN    set BOT_TOKEN (@BotFather)
+#   --fixed-verify-code C  preset login code for all users (skips bot)
 #   --install-dir PATH   default /opt/familygram
 #   --web-domain DOMAIN  public web hostname (e.g. web.example.com)
 #   --api-id ID          Telegram API id (my.telegram.org)
@@ -26,7 +31,7 @@
 #   --help               show help
 set -euo pipefail
 
-INSTALLER_VERSION="4.0.0"
+INSTALLER_VERSION="4.1.0"
 
 REPO_URL="${REPO_URL:-https://github.com/CyberoniOntoni/familygram.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
@@ -45,6 +50,8 @@ LAN_IP="${LAN_IP:-}"
 BRAND="${BRAND:-}"
 PASSKEY_DOMAIN="${PASSKEY_DOMAIN:-}"
 BOT_TOKEN="${BOT_TOKEN:-}"
+FIXED_VERIFY_CODE="${FIXED_VERIFY_CODE:-}"
+ENABLE_BOT="${ENABLE_BOT:-}"
 ENABLE_PASSKEY="${ENABLE_PASSKEY:-}"
 ENABLE_RTMP="${ENABLE_RTMP:-}"
 
@@ -113,7 +120,9 @@ usage() {
   sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
   echo ""
   echo "Environment variables (for --non-interactive):"
-  echo "  PUBLIC_IP, LAN_IP, BRAND, PASSKEY_DOMAIN, BOT_TOKEN"
+  echo "  PUBLIC_IP, LAN_IP, BRAND, PASSKEY_DOMAIN"
+  echo "  BOT_TOKEN (or FIXED_VERIFY_CODE — one required)"
+  echo "  FIXED_VERIFY_CODE, ENABLE_BOT=yes|no"
   echo "  ENABLE_PASSKEY=yes|no, ENABLE_RTMP=yes|no, CUSTOMIZE_PORTS=yes|no"
   echo "  INSTALL_DOCKER=yes|no, DO_FIREWALL=yes|no"
   echo "  PORT_MT1..PORT_MT4, PORT_HTTPS, PORT_STUN, PORT_RELAY_MIN, PORT_RELAY_MAX"
@@ -133,6 +142,7 @@ while [[ $# -gt 0 ]]; do
     --brand) BRAND="${2:-}"; shift 2 ;;
     --passkey-domain) PASSKEY_DOMAIN="${2:-}"; shift 2 ;;
     --bot-token) BOT_TOKEN="${2:-}"; shift 2 ;;
+    --fixed-verify-code) FIXED_VERIFY_CODE="${2:-}"; shift 2 ;;
     --web-domain) WEB_DOMAIN="${2:-}"; shift 2 ;;
     --api-id) TELEGRAM_API_ID="${2:-}"; shift 2 ;;
     --api-hash) TELEGRAM_API_HASH="${2:-}"; shift 2 ;;
@@ -171,7 +181,16 @@ if [[ "${NON_INTERACTIVE}" == true ]]; then
   [[ -n "${LAN_IP}" ]] || die "LAN_IP required in non-interactive mode"
   [[ -n "${PUBLIC_IP}" ]] || die "PUBLIC_IP required in non-interactive mode"
   [[ -n "${BRAND}" ]] || BRAND="FamilyGram"
-  [[ -n "${BOT_TOKEN}" ]] || die "BOT_TOKEN required in non-interactive mode"
+  if [[ -n "${FIXED_VERIFY_CODE}" ]]; then
+    is_verify_code "${FIXED_VERIFY_CODE}" || die "Invalid FIXED_VERIFY_CODE: use 4-8 digits"
+    ENABLE_BOT="${ENABLE_BOT:-no}"
+    BOT_TOKEN=""
+  elif [[ -n "${BOT_TOKEN}" ]]; then
+    ENABLE_BOT="${ENABLE_BOT:-yes}"
+    FIXED_VERIFY_CODE=""
+  else
+    die "Provide BOT_TOKEN or FIXED_VERIFY_CODE in non-interactive mode"
+  fi
   [[ -n "${TELEGRAM_API_ID}" ]] || die "TELEGRAM_API_ID required in non-interactive mode"
   [[ -n "${TELEGRAM_API_HASH}" ]] || die "TELEGRAM_API_HASH required in non-interactive mode"
   if [[ "${ENABLE_WEB}" == "yes" ]]; then

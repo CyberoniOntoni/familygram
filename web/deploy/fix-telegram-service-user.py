@@ -5,23 +5,27 @@ from pathlib import Path
 
 import paramiko
 
+HOST = os.environ.get('FAMILYGRAM_SSH_HOST', '')
+USER = os.environ.get('FAMILYGRAM_SSH_USER', 'root')
 PASSWORD = os.environ.get('FAMILYGRAM_SSH_PASSWORD', '')
-SCRIPT = Path(__file__).resolve().parents[2] / 'testgram' / 'docker' / 'compose' / 'init-telegram-service.sh'
-REMOTE = '/opt/testgram/docker/compose/init-telegram-service.sh'
+SCRIPT = Path(__file__).resolve().parents[2] / 'docker' / 'compose' / 'init-telegram-service.sh'
+REMOTE = '/opt/familygram/docker/compose/init-telegram-service.sh'
 
+if not HOST:
+    raise SystemExit('Set FAMILYGRAM_SSH_HOST')
 if not PASSWORD:
     raise SystemExit('Set FAMILYGRAM_SSH_PASSWORD')
 
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-client.connect('192.168.11.79', username='root', password=PASSWORD, timeout=15, look_for_keys=False, allow_agent=False)
+client.connect(HOST, username=USER, password=PASSWORD, timeout=15, look_for_keys=False, allow_agent=False)
 
 sftp = client.open_sftp()
 sftp.put(str(SCRIPT), REMOTE)
 sftp.close()
 
 stdin, stdout, stderr = client.exec_command(
-    f'chmod +x {REMOTE} && cd /opt/testgram/docker/compose && bash {REMOTE}',
+    f'chmod +x {REMOTE} && cd /opt/familygram/docker/compose && bash {REMOTE}',
     timeout=120,
 )
 out = stdout.read().decode('utf-8', errors='replace')

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import paramiko
 
-HOST = os.environ.get('FAMILYGRAM_SSH_HOST', '192.168.11.79')
+HOST = os.environ.get('FAMILYGRAM_SSH_HOST', '')
 USER = os.environ.get('FAMILYGRAM_SSH_USER', 'root')
 PASSWORD = os.environ.get('FAMILYGRAM_SSH_PASSWORD', '')
 SSH_KEY = Path(os.environ.get('FAMILYGRAM_SSH_KEY', Path(os.environ['USERPROFILE']) / '.ssh' / 'id_ed25519'))
@@ -51,6 +51,9 @@ def connect_client() -> paramiko.SSHClient:
 
 
 def main() -> int:
+    if not HOST:
+        print('FAMILYGRAM_SSH_HOST not set', file=sys.stderr)
+        return 1
     client = connect_client()
     print(f'Connected to {HOST}')
 

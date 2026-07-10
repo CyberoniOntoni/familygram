@@ -143,6 +143,13 @@ is_port() {
   return 0
 }
 
+is_verify_code() {
+  local code="$1"
+  code="$(trim_line "$code")"
+  [[ "$code" =~ ^[0-9]{4,8}$ ]] || return 1
+  return 0
+}
+
 # Format WAN port for router/firewall tables: 5348(TCP&UDP), 49152-49172(UDP), etc.
 port_with_proto() {
   local port="$1"
@@ -474,7 +481,15 @@ write_env_file() {
   set_env App__SendWelcomeMessageAfterUserSignIn "True"
   set_env App__PasskeyRpId "$PASSKEY_DOMAIN"
   set_env App__PasskeyRpName "$BRAND"
-  set_env BOT_TOKEN "$BOT_TOKEN"
+  if [[ "${ENABLE_BOT}" == "yes" ]]; then
+    set_env BOT_TOKEN "$BOT_TOKEN"
+    set_env TelegramBotSms__Enabled "true"
+    set_env App__FixedVerifyCode ""
+  else
+    set_env BOT_TOKEN ""
+    set_env TelegramBotSms__Enabled "false"
+    set_env App__FixedVerifyCode "$FIXED_VERIFY_CODE"
+  fi
 
   set_env App__Servers__0__Port "$PORT_MT1"
   set_env App__Servers__1__Port "$PORT_MT2"
@@ -565,6 +580,8 @@ ENABLE_WEB=${ENABLE_WEB}
 WEB_DOMAIN=${WEB_DOMAIN}
 WEB_HOST_PORT=${WEB_HOST_PORT}
 TELEGRAM_API_ID=${TELEGRAM_API_ID}
+ENABLE_BOT=${ENABLE_BOT}
+FIXED_VERIFY_CODE=${FIXED_VERIFY_CODE}
 COMPOSE_DIR=${COMPOSE_DIR}
 EOF
 }
@@ -661,23 +678,40 @@ print_config_review() {
   fi
   ui_printf '  %-22s %s\n' "Install Docker:" "${INSTALL_DOCKER}"
   ui_printf '  %-22s %s\n' "Configure UFW:" "${DO_FIREWALL}"
-  ui_printf '  %-22s %s\n' "Bot token:" "${BOT_TOKEN:0:12}..."
+  if [[ "${ENABLE_BOT}" == "yes" ]]; then
+    ui_printf '  %-22s %s\n' "Login codes:" "@BotFather bot (${BOT_TOKEN:0:12}...)"
+  else
+    ui_printf '  %-22s %s\n' "Login codes:" "Fixed code (${FIXED_VERIFY_CODE})"
+  fi
   ui_printf '  %-22s %s\n' "Web client:" "${ENABLE_WEB} (${WEB_DOMAIN:-n/a})"
   ui_printf '  %-22s %s\n' "API id:" "${TELEGRAM_API_ID}"
   hr
 }
 
+compose_with_profiles() {
+  if [[ "${ENABLE_BOT}" == "yes" ]]; then
+    COMPOSE_PROFILES=bot docker compose "$@"
+  else
+    docker compose "$@"
+  fi
+}
+
 start_stack() {
   log "Pulling server Docker images (first run may take several minutes)..."
-  docker compose pull --ignore-buildable
+  compose_with_profiles pull --ignore-buildable
 
   if [[ "${ENABLE_WEB}" == "yes" ]]; then
     log "Building FamilyGram Web image (npm build — may take several minutes)..."
-    docker compose build familygram-web
+    compose_with_profiles build familygram-web
   fi
 
   log "Starting FamilyGram stack..."
-  docker compose up -d
+  if [[ "${ENABLE_BOT}" == "yes" ]]; then
+    log "Verification bot enabled (COMPOSE_PROFILES=bot)"
+  else
+    log "Using fixed login code — verification bot skipped"
+  fi
+  compose_with_profiles up -d
 
   log "Waiting for gateway-server (up to 120s)..."
   local i
@@ -730,6 +764,45 @@ prompt_bot_token() {
   done
 }
 
+prompt_login_verification() {
+  if [[ -n "${FIXED_VERIFY_CODE}" ]]; then
+    is_verify_code "${FIXED_VERIFY_CODE}" || die "Invalid FIXED_VERIFY_CODE: use 4-8 digits"
+    ENABLE_BOT="no"
+    BOT_TOKEN=""
+    log "Using fixed verify code from environment/flag — @BotFather bot skipped"
+    return 0
+  fi
+  if [[ -n "${BOT_TOKEN}" ]]; then
+    ENABLE_BOT="yes"
+    FIXED_VERIFY_CODE=""
+    log "BOT_TOKEN provided via environment/flag"
+    return 0
+  fi
+
+  ui_printf '%s\n' \
+    "Login verification — choose ONE:" \
+    "  • @BotFather bot — sends a unique code to each user (shared / production setups)" \
+    "  • Fixed code — every user enters the same code (private or lab setups)" \
+    ""
+  prompt_yes_no USE_FIXED_VERIFY_CODE "Use a fixed login code for all users?" "no"
+  if [[ "${USE_FIXED_VERIFY_CODE}" == "yes" ]]; then
+    ENABLE_BOT="no"
+    BOT_TOKEN=""
+    while true; do
+      read_with_prompt FIXED_VERIFY_CODE "  Fixed login code (4-8 digits): "
+      if is_verify_code "${FIXED_VERIFY_CODE}"; then
+        break
+      fi
+      warn "Enter 4-8 digits only"
+    done
+    log "Fixed login code set — @BotFather bot will not be configured"
+  else
+    ENABLE_BOT="yes"
+    FIXED_VERIFY_CODE=""
+    prompt_bot_token
+  fi
+}
+
 run_install_wizard() {
   local total_steps=8
 
@@ -741,7 +814,7 @@ run_install_wizard() {
     "You will need:" \
     "  • Public WAN IP (what clients connect to)" \
     "  • LAN IP of this machine (for router port forwards)" \
-    "  • @BotFather bot token (login verification codes)" \
+    "  • Login verification: @BotFather bot token OR a fixed login code" \
     "  • Telegram API id + hash from my.telegram.org (web client)" \
     "  • Public web hostname (e.g. web.example.com) if using the web UI" \
     ""
@@ -815,14 +888,14 @@ run_install_wizard() {
     prompt PORT_RTMP_HLS "RTMP HLS port — TCP only" "$PORT_RTMP_HLS" is_port
   fi
 
-  step 5 "$total_steps" "API credentials & bot"
+  step 5 "$total_steps" "API credentials & login"
   if [[ "${ENABLE_WEB}" == "yes" ]]; then
     prompt_api_credentials
   else
     TELEGRAM_API_ID="${TELEGRAM_API_ID:-0}"
     TELEGRAM_API_HASH="${TELEGRAM_API_HASH:-disabled}"
   fi
-  prompt_bot_token
+  prompt_login_verification
 
   step 6 "$total_steps" "Docker options"
   TURN_PASS="${TURN_PASS:-$(openssl rand -hex 16)}"
@@ -884,5 +957,10 @@ run_install_apply() {
     ui_printf '  Web UI:    https://%s/ (after reverse proxy is configured)\n' "${WEB_DOMAIN}"
     ui_printf '  Local:     http://%s:%s/\n' "${LAN_IP}" "${WEB_HOST_PORT}"
   fi
-  ui_printf '  Next:      port-forward table above, link phone in @BotFather bot, native clients use IP %s\n\n' "${PUBLIC_IP}"
+  if [[ "${ENABLE_BOT}" == "yes" ]]; then
+    ui_printf '  Next:      port-forward table above, link phone in @BotFather bot, native clients use IP %s\n\n' "${PUBLIC_IP}"
+  else
+    ui_printf '  Next:      port-forward table above, sign in with phone + fixed code %s, native clients use IP %s\n\n' \
+      "${FIXED_VERIFY_CODE}" "${PUBLIC_IP}"
+  fi
 }

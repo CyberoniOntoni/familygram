@@ -21,7 +21,7 @@ The wizard collects:
 - Public WAN IP and LAN IP (port forwards)
 - Brand name (default **FamilyGram**)
 - Web hostname (e.g. `web.example.com`) and API credentials from [my.telegram.org](https://my.telegram.org)
-- @BotFather bot token (login verification codes)
+- Login verification: **@BotFather bot** (unique codes per user) **or fixed login code** (same code for everyone — no bot)
 - Optional passkey domain and RTMP ports
 
 Then it clones this repo to `/opt/familygram`, writes `docker/compose/.env`, and starts the stack.
@@ -29,10 +29,18 @@ Then it clones this repo to `/opt/familygram`, writes `docker/compose/.env`, and
 ### Non-interactive
 
 ```bash
+# With @BotFather bot (verification codes via Telegram):
 PUBLIC_IP=1.2.3.4 LAN_IP=192.168.1.10 \
 WEB_DOMAIN=web.example.com \
 TELEGRAM_API_ID=12345678 TELEGRAM_API_HASH=your_api_hash \
 BOT_TOKEN='123456789:AAH...' \
+sudo bash install.sh --non-interactive --start
+
+# With a fixed login code (no @BotFather):
+PUBLIC_IP=1.2.3.4 LAN_IP=192.168.1.10 \
+WEB_DOMAIN=web.example.com \
+TELEGRAM_API_ID=12345678 TELEGRAM_API_HASH=your_api_hash \
+FIXED_VERIFY_CODE=12345 \
 sudo bash install.sh --non-interactive --start
 ```
 

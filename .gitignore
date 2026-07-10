@@ -3,6 +3,9 @@ docker/compose/.env.local
 docker/compose/data/
 docker/compose/geoip/*.mmdb
 deploy/last-install-config.txt
+deploy/DEPLOYMENT.local.md
+web/public/build-stats.json
+web/public/statoscope-report.html
 web/node_modules/
 web/dist/
 web/.env

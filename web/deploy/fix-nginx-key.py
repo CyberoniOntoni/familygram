@@ -5,9 +5,15 @@ from pathlib import Path
 
 import paramiko
 
-HOST = '192.168.11.79'
-USER = 'root'
-PASSWORD = os.environ['FAMILYGRAM_SSH_PASSWORD']
+HOST = os.environ.get('FAMILYGRAM_SSH_HOST', '')
+USER = os.environ.get('FAMILYGRAM_SSH_USER', 'root')
+PASSWORD = os.environ.get('FAMILYGRAM_SSH_PASSWORD', '')
+if not HOST:
+    print('FAMILYGRAM_SSH_HOST not set', file=sys.stderr)
+    sys.exit(1)
+if not PASSWORD:
+    print('FAMILYGRAM_SSH_PASSWORD not set', file=sys.stderr)
+    sys.exit(1)
 PUB_KEY = (Path(os.environ['USERPROFILE']) / '.ssh' / 'id_ed25519.pub').read_text().strip()
 NGINX_SNIPPET = r'''
     location = /index.html {
