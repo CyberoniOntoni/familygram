@@ -1,6 +1,19 @@
+import type { ApiPhoneCall } from '../../api/types';
 import type { GlobalState } from '../types';
 
 import { getMainUsername, isChatBasicGroup } from '../helpers';
+
+const ACTIVE_PHONE_CALL_STATES = new Set<NonNullable<ApiPhoneCall['state']>>([
+  'requested', 'accepted', 'active', 'requesting', 'waiting',
+]);
+
+export function isPhoneCallOccupyingSlot(phoneCall?: ApiPhoneCall) {
+  if (!phoneCall?.id || phoneCall.state === 'discarded') {
+    return false;
+  }
+
+  return ACTIVE_PHONE_CALL_STATES.has(phoneCall.state ?? 'requested');
+}
 import { selectChat, selectChatFullInfo } from './chats';
 import { selectUser } from './users';
 

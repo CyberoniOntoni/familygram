@@ -11,7 +11,7 @@ import { updateChat, updateChatFullInfo } from '../../reducers';
 import { removeGroupCall, updateGroupCall, updateGroupCallParticipant } from '../../reducers/calls';
 import { updateTabState } from '../../reducers/tabs';
 import { selectChat } from '../../selectors';
-import { selectGroupCall, selectPhoneCallUser } from '../../selectors/calls';
+import { isPhoneCallOccupyingSlot, selectGroupCall, selectPhoneCallUser } from '../../selectors/calls';
 import { checkNavigatorUserMediaPermissions, initializeSounds } from '../ui/calls';
 
 addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
@@ -90,7 +90,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
       const { call } = update;
 
       // Another call (P2P or group) is already active: auto-discard the new incoming call as busy.
-      const isInOtherPhoneCall = Boolean(phoneCall?.id) && call.id !== phoneCall.id;
+      const isInOtherPhoneCall = isPhoneCallOccupyingSlot(phoneCall) && call.id !== phoneCall!.id;
       const isInGroupCall = Boolean(global.groupCalls.activeGroupCallId) && !phoneCall;
       if (isInOtherPhoneCall || isInGroupCall) {
         if (call.state !== 'discarded') {

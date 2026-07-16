@@ -18,7 +18,12 @@ import { callApi } from '../../../api/gramjs';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
 import { updateGroupCall, updateGroupCallParticipant } from '../../reducers/calls';
 import { updateTabState } from '../../reducers/tabs';
-import { selectActiveGroupCall, selectGroupCallParticipant, selectPhoneCallUser } from '../../selectors/calls';
+import {
+  isPhoneCallOccupyingSlot,
+  selectActiveGroupCall,
+  selectGroupCallParticipant,
+  selectPhoneCallUser,
+} from '../../selectors/calls';
 
 let phoneCallSignalingDataPromise = Promise.resolve();
 let groupCallNegotiationPromise = Promise.resolve();
@@ -104,7 +109,7 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
 
       // Another call (P2P or group) is already active - ignore here so we don't show the popup;
       // the non-async handler discards the new call as busy.
-      const isInOtherPhoneCall = Boolean(phoneCall?.id) && update.call.id !== phoneCall?.id;
+      const isInOtherPhoneCall = isPhoneCallOccupyingSlot(phoneCall) && update.call.id !== phoneCall!.id;
       const isInGroupCall = Boolean(global.groupCalls.activeGroupCallId) && !phoneCall;
       if (isInOtherPhoneCall || isInGroupCall) {
         return undefined;
