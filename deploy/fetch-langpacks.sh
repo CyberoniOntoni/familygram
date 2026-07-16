@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download and convert official Telegram Android language packs for Testgram data-seeder.
+# Download and convert official Telegram Android language packs for FamilyGram Server data-seeder.
 # Run from repo root: bash deploy/fetch-langpacks.sh
 set -euo pipefail
 

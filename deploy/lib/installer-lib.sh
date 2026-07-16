@@ -1,4 +1,4 @@
-# Shared helpers for FamilyGram Docker installers (Testgram server + web client).
+# Shared helpers for FamilyGram Docker installers (FamilyGram Server + web client).
 # Sourced by deploy/install.sh — do not execute directly.
 
 installer_lib_init() {
@@ -80,7 +80,7 @@ EOF
   fi
   ui_printf '%s\n' "${C_RESET}"
   ui_printf '  %sFamilyGram unified installer%s\n' "${C_BOLD}" "${C_RESET}"
-  ui_printf '  %sTestgram server + web client via Docker Compose%s\n\n' "${C_DIM}" "${C_RESET}"
+  ui_printf '  %sFamilyGram Server + web client via Docker Compose%s\n\n' "${C_DIM}" "${C_RESET}"
 }
 
 step() {
@@ -730,16 +730,16 @@ configure_firewall() {
   fi
   log "Configuring UFW..."
   ufw allow 22/tcp comment 'SSH' >/dev/null 2>&1 || true
-  ufw allow "${PORT_MT1},${PORT_MT2},${PORT_MT3},${PORT_MT4}/tcp" comment 'Testgram MTProto' >/dev/null 2>&1 || true
+  ufw allow "${PORT_MT1},${PORT_MT2},${PORT_MT3},${PORT_MT4}/tcp" comment 'FamilyGram MTProto' >/dev/null 2>&1 || true
   if [[ "${ENABLE_PASSKEY}" == "yes" ]]; then
-    ufw allow "${PORT_HTTPS}/tcp" comment 'Testgram passkey HTTPS' >/dev/null 2>&1 || true
+    ufw allow "${PORT_HTTPS}/tcp" comment 'FamilyGram passkey HTTPS' >/dev/null 2>&1 || true
   fi
-  ufw allow "${PORT_STUN}/tcp" comment 'Testgram STUN/TURN' >/dev/null 2>&1 || true
-  ufw allow "${PORT_STUN}/udp" comment 'Testgram STUN/TURN' >/dev/null 2>&1 || true
-  ufw allow "${PORT_RELAY_MIN}:${PORT_RELAY_MAX}/udp" comment 'Testgram TURN relay' >/dev/null 2>&1 || true
+  ufw allow "${PORT_STUN}/tcp" comment 'FamilyGram STUN/TURN' >/dev/null 2>&1 || true
+  ufw allow "${PORT_STUN}/udp" comment 'FamilyGram STUN/TURN' >/dev/null 2>&1 || true
+  ufw allow "${PORT_RELAY_MIN}:${PORT_RELAY_MAX}/udp" comment 'FamilyGram TURN relay' >/dev/null 2>&1 || true
   if [[ "${ENABLE_RTMP}" == "yes" ]]; then
-    ufw allow "${PORT_RTMP}/tcp" comment 'Testgram RTMP' >/dev/null 2>&1 || true
-    ufw allow "${PORT_RTMP_HLS}/tcp" comment 'Testgram RTMP HLS' >/dev/null 2>&1 || true
+    ufw allow "${PORT_RTMP}/tcp" comment 'FamilyGram RTMP' >/dev/null 2>&1 || true
+    ufw allow "${PORT_RTMP_HLS}/tcp" comment 'FamilyGram RTMP HLS' >/dev/null 2>&1 || true
   fi
   if [[ "${ENABLE_WEB}" == "yes" ]]; then
     ufw allow "${WEB_HOST_PORT}/tcp" comment 'FamilyGram Web' >/dev/null 2>&1 || true
@@ -789,7 +789,7 @@ print_port_forwards() {
       "  • Reverse proxy ${WEB_DOMAIN}:443 → ${LAN_IP}:${WEB_HOST_PORT} (WebSockets ON)" \
       "  • Open https://${WEB_DOMAIN}/ after the stack is up"
   fi
-  ui_printf '\n%sGHCR:%s github.com/CyberoniOntoni/testgram/packages must be public, or run docker login ghcr.io\n' \
+  ui_printf '\n%sGHCR:%s github.com/CyberoniOntoni/FamilyGram-Server/packages must be public, or run docker login ghcr.io\n' \
     "${C_BOLD}" "${C_RESET}"
 }
 
@@ -1085,7 +1085,7 @@ run_install_wizard() {
 
   step 4 "$total_steps" "Ports"
   ui_printf '%s\n' "Port notation: number(PROTO) — TCP, UDP, or TCP&UDP (both protocols on same port)."
-  prompt_yes_no CUSTOMIZE_PORTS "Customize service ports? (No = use Testgram defaults)" "no"
+  prompt_yes_no CUSTOMIZE_PORTS "Customize service ports? (No = use FamilyGram Server defaults)" "no"
   if [[ "${CUSTOMIZE_PORTS}" == "yes" ]]; then
     prompt PORT_MT1 "MTProto DC1 (main) — TCP only" "$PORT_MT1" is_port
     prompt PORT_MT2 "MTProto DC2 — TCP only" "$PORT_MT2" is_port

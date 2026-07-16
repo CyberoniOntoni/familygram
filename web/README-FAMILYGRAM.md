@@ -1,6 +1,6 @@
 # FamilyGram Web
 
-Self-hosted [telegram-tt](https://github.com/Ajaxy/telegram-tt) web client for [Testgram](https://github.com/CyberoniOntoni/testgram).
+Self-hosted [telegram-tt](https://github.com/Ajaxy/telegram-tt) web client for [FamilyGram Server](https://github.com/CyberoniOntoni/FamilyGram-Server).
 
 Part of the unified [FamilyGram](https://github.com/CyberoniOntoni/familygram) monorepo — use `deploy/install.sh` or `docker compose` from the repo root for the recommended setup.
 
@@ -9,7 +9,7 @@ Verified on Testgram layer **224** with login, chats, messaging, and voice/video
 ## Requirements
 
 - Node.js ^22.6 or ^24 (installer installs v24 via nvm when the host has v20 or older; Docker build uses Node 24 inside the image)
-- A running FamilyGram/Testgram stack ([install guide](https://github.com/CyberoniOntoni/familygram))
+- A running FamilyGram stack ([install guide](https://github.com/CyberoniOntoni/familygram))
 - Or Docker Compose from this monorepo (includes nginx + gateway proxy)
 
 ## Quick start
@@ -116,6 +116,6 @@ Public URL example: `https://web.example.com`
 
 | Client | Repository |
 |--------|------------|
-| Server | [CyberoniOntoni/testgram](https://github.com/CyberoniOntoni/testgram) |
+| Server | [CyberoniOntoni/FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) |
 | Desktop | [CyberoniOntoni/familygram-desktop](https://github.com/CyberoniOntoni/familygram-desktop) |
 | Web (this) | [CyberoniOntoni/familygram-web](https://github.com/CyberoniOntoni/familygram-web) |

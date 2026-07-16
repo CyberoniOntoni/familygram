@@ -203,7 +203,7 @@ services:
 
 ### Data seeder
   data-seeder:
-    image: ${TestgramRegistry}/mytelegram-data-seeder:${TestgramVersion}
+    image: ${FamilyGramServerRegistry:-${TestgramRegistry:-ghcr.io/cyberoniontoni/familygram-server}}/mytelegram-data-seeder:${FamilyGramServerVersion:-${TestgramVersion:-latest}}
     restart: always
     networks:
       - tg-net
@@ -238,7 +238,7 @@ services:
 
   ### 1.Gateway server
   gateway-server:
-    image: ${TestgramRegistry}/mytelegram-gateway-server:${TestgramVersion}
+    image: ${FamilyGramServerRegistry:-${TestgramRegistry:-ghcr.io/cyberoniontoni/familygram-server}}/mytelegram-gateway-server:${FamilyGramServerVersion:-${TestgramVersion:-latest}}
     restart: always
     networks:
       - tg-net
@@ -349,7 +349,7 @@ services:
 
   ### 2.Auth server
   auth-server:
-    image: ${TestgramRegistry}/mytelegram-auth-server:${TestgramVersion}
+    image: ${FamilyGramServerRegistry:-${TestgramRegistry:-ghcr.io/cyberoniontoni/familygram-server}}/mytelegram-auth-server:${FamilyGramServerVersion:-${TestgramVersion:-latest}}
     restart: always
     networks:
       - tg-net
@@ -487,7 +487,7 @@ services:
 
   ### 5.Messenger command server
   messenger-command-server:
-    image: ${TestgramRegistry}/mytelegram-messenger-command-server:${TestgramVersion}
+    image: ${FamilyGramServerRegistry:-${TestgramRegistry:-ghcr.io/cyberoniontoni/familygram-server}}/mytelegram-messenger-command-server:${FamilyGramServerVersion:-${TestgramVersion:-latest}}
     restart: always
     networks:
       - tg-net
@@ -601,7 +601,7 @@ services:
 
   ### 6.Messenger query server
   messenger-query-server:
-    image: ${TestgramRegistry}/mytelegram-messenger-query-server:${TestgramVersion}
+    image: ${FamilyGramServerRegistry:-${TestgramRegistry:-ghcr.io/cyberoniontoni/familygram-server}}/mytelegram-messenger-query-server:${FamilyGramServerVersion:-${TestgramVersion:-latest}}
     restart: always
     networks:
       - tg-net
@@ -712,7 +712,7 @@ services:
 
   ### 7.Sms sender
   sms-sender:
-    image: ${TestgramRegistry}/mytelegram-sms-sender:${TestgramVersion}
+    image: ${FamilyGramServerRegistry:-${TestgramRegistry:-ghcr.io/cyberoniontoni/familygram-server}}/mytelegram-sms-sender:${FamilyGramServerVersion:-${TestgramVersion:-latest}}
     restart: always
     networks:
       - tg-net
@@ -748,7 +748,7 @@ services:
   bot:
     profiles:
       - bot
-    image: ${TestgramRegistry}/testgram-bot:${TestgramVersion}
+    image: ${FamilyGramServerRegistry:-${TestgramRegistry:-ghcr.io/cyberoniontoni/familygram-server}}/familygram-server-bot:${FamilyGramServerVersion:-${TestgramVersion:-latest}}
     restart: always
     networks:
       - tg-net

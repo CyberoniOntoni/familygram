@@ -2,7 +2,7 @@
 
 **FamilyGram** is a self-hosted, private messaging platform for families, teams, and small communities. It gives you a Telegram-like experience — chats, groups, media, voice/video calls, and a modern web app — on **your own server**, without depending on Telegram’s cloud.
 
-This repository is the **unified deployment package**: it wires together the backend ([Testgram](https://github.com/CyberoniOntoni/testgram), a [MyTelegram](https://github.com/loyldg/mytelegram) fork) and the web client ([FamilyGram Web](web/), a [telegram-tt](https://github.com/Ajaxy/telegram-tt) fork) into one Docker Compose stack with an interactive installer.
+This repository is the **unified deployment package**: it wires together the backend ([FamilyGram Server](https://github.com/CyberoniOntoni/FamilyGram-Server), a [MyTelegram](https://github.com/loyldg/mytelegram) fork) and the web client ([FamilyGram Web](web/), a [telegram-tt](https://github.com/Ajaxy/telegram-tt) fork) into one Docker Compose stack with an interactive installer.
 
 ## What this project is
 
@@ -10,7 +10,7 @@ FamilyGram is **not** a hosted service and **not** a connection to telegram.org.
 
 | Layer | What it does |
 |-------|----------------|
-| **Testgram server** | MTProto gateway, authentication, messaging, file storage (MinIO), voice/video (Coturn/TURN), optional verification bot |
+| **FamilyGram Server** | MTProto gateway, authentication, messaging, file storage (MinIO), voice/video (Coturn/TURN), optional verification bot |
 | **FamilyGram Web** | Browser UI that connects to your server over WebSocket MTProto (`/apiws`) |
 | **Docker Compose** | MongoDB, Redis, RabbitMQ, and all services orchestrated as one stack |
 | **Installer** | Guided setup: IPs, branding, login mode, firewall, `.env`, and first start |
@@ -34,10 +34,25 @@ Typical use cases:
 
 | Component | Path | Description |
 |-----------|------|-------------|
-| Server | GHCR `cyberoniontoni/testgram` images | MTProto gateway, auth, messaging, calls (Coturn) |
+| Server | GHCR `cyberoniontoni/familygram-server` images | MTProto gateway, auth, messaging, calls (Coturn) |
 | Web | [`web/`](web/) | [telegram-tt](https://github.com/Ajaxy/telegram-tt) fork, built into `familygram-web` container |
 | Compose | [`docker/compose/`](docker/compose/) | Full stack including nginx web front-end |
-| Installer | [`deploy/install.sh`](deploy/install.sh) | Interactive setup wizard (v4.2.x) |
+| Installer | [`deploy/install.sh`](deploy/install.sh) | Interactive setup wizard (v4.3.x) |
+
+## Migrating from Testgram
+
+If you deployed before the **FamilyGram-Server** rename:
+
+1. On GitHub, rename `CyberoniOntoni/testgram` → `FamilyGram-Server` (Settings → General → Repository name). GHCR packages move to `ghcr.io/cyberoniontoni/familygram-server/`.
+2. In `docker/compose/.env`, set:
+   ```env
+   FamilyGramServerRegistry=ghcr.io/cyberoniontoni/familygram-server
+   FamilyGramServerVersion=latest
+   ```
+   (Old `TestgramRegistry` / `TestgramVersion` still work until you remove them.)
+3. `docker compose pull` then `docker compose up -d` — bot image is now `familygram-server-bot`.
+
+Unified installs use the [familygram](https://github.com/CyberoniOntoni/familygram) repo only; no need to clone FamilyGram-Server separately.
 
 ## Quick install
 
@@ -233,21 +248,21 @@ familygram/
 └── web/              # FamilyGram Web source + Dockerfile
 ```
 
-Server binaries are pulled from [CyberoniOntoni/testgram](https://github.com/CyberoniOntoni/testgram) GHCR packages — this repo does not rebuild them.
+Server binaries are pulled from [CyberoniOntoni/FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) GHCR packages — this repo does not rebuild them.
 
 ## Related projects
 
 | Platform | Repository |
 |----------|------------|
-| Server source | [CyberoniOntoni/testgram](https://github.com/CyberoniOntoni/testgram) |
+| Server source | [CyberoniOntoni/FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) |
 | Web source (standalone) | [CyberoniOntoni/familygram-web](https://github.com/CyberoniOntoni/familygram-web) |
 | Desktop | [CyberoniOntoni/familygram-desktop](https://github.com/CyberoniOntoni/familygram-desktop) |
 
 ## Language packs (English / Russian)
 
-FamilyGram Web loads UI strings from the **Testgram server** (`langpack.getLangPack`, pack `weba`). The data-seeder only imported **Russian** in older images; **English** was missing or incomplete, so menus showed raw keys while Russian looked fine.
+FamilyGram Web loads UI strings from **FamilyGram Server** (`langpack.getLangPack`, pack `weba`). The data-seeder only imported **Russian** in older images; **English** was missing or incomplete, so menus showed raw keys while Russian looked fine.
 
-**Fix (server):** This repo ships `docker/compose/langpacks/en/android.json` (~11k strings from [translations.telegram.org](https://translations.telegram.org/en/android/)). The installer copies it into `data/mytelegram/data-seeder/downloads/langpacks/`. You need a **testgram data-seeder image** that imports both `ru` and `en` (see [CyberoniOntoni/testgram](https://github.com/CyberoniOntoni/testgram) `LanguagePackDataSeeder`).
+**Fix (server):** This repo ships `docker/compose/langpacks/en/android.json` (~11k strings from [translations.telegram.org](https://translations.telegram.org/en/android/)). The installer copies it into `data/mytelegram/data-seeder/downloads/langpacks/`. You need a **FamilyGram Server data-seeder image** that imports both `ru` and `en` (see [FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) `LanguagePackDataSeeder`).
 
 On an existing host:
 
@@ -273,7 +288,7 @@ bash deploy/fetch-langpacks.sh              # English
 FETCH_RU=yes bash deploy/fetch-langpacks.sh # English + Russian
 ```
 
-Russian is also bundled in the testgram image; if `data-seeder` logs `Russian language pack file is missing`, copy from the image — see [testgram README](https://github.com/CyberoniOntoni/testgram/blob/main/README.md#data-seeder--russian-language-pack-file-is-missing).
+Russian is also bundled in the FamilyGram Server image; if `data-seeder` logs `Russian language pack file is missing`, copy from the image — see [FamilyGram-Server README](https://github.com/CyberoniOntoni/FamilyGram-Server/blob/dev/README.md#data-seeder--language-pack-file-is-missing).
 
 ## Web client details
 

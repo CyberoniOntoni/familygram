@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# FamilyGram — unified Testgram server + web client Docker Compose installer
+# FamilyGram — unified FamilyGram Server + web client Docker Compose installer
 #
 # Usage (save first, then run — do NOT curl | bash):
 #   curl -fsSL https://raw.githubusercontent.com/CyberoniOntoni/familygram/main/deploy/install.sh -o install.sh
@@ -33,7 +33,7 @@ set -euo pipefail
 
 INSTALLER_ARGS=("$@")
 
-INSTALLER_VERSION="4.2.3"
+INSTALLER_VERSION="4.3.0"
 
 REPO_URL="${REPO_URL:-https://github.com/CyberoniOntoni/familygram.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
