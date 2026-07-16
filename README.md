@@ -15,7 +15,7 @@ FamilyGram is **not** a hosted service and **not** a connection to telegram.org.
 | **Docker Compose** | MongoDB, Redis, RabbitMQ, and all services orchestrated as one stack |
 | **Installer** | Guided setup: IPs, branding, login mode, firewall, `.env`, and first start |
 
-Native clients ([FamilyGram Desktop](https://github.com/CyberoniOntoni/familygram-desktop)) can also point at your server IP; the web client is included here so users can sign in from any browser.
+Native clients ([FamilyGram Desktop](https://github.com/CyberoniOntoni/familygram-desktop)) can also point at your server IP (work in progress); the web client is included here so users can sign in from any browser.
 
 ## What it is for
 
