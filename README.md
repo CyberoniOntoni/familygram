@@ -286,16 +286,87 @@ bash deploy/fetch-langpacks.sh
 
 ## Uninstall
 
-Remove the Docker stack (containers, data, and `/opt/familygram` by default):
+[`deploy/uninstall.sh`](deploy/uninstall.sh) removes the FamilyGram Docker stack installed by [`deploy/install.sh`](deploy/install.sh). Run it on the host where the stack runs (default install path: `/opt/familygram`).
+
+### What the script does
+
+1. Stops all compose services (including `web` and `bot` profiles when they were enabled at install)
+2. By default, deletes `docker/compose/data/` (MongoDB, uploads, logs, bot DB, etc.) and `.env`
+3. By default, removes the entire `/opt/familygram` directory
+4. Prints a reminder for external cleanup (NPM, firewall, DNS)
+
+GHCR server images pulled from GitHub are **not** removed unless you pass `--remove-images` (that flag only drops the locally built `familygram/familygram-web:local` image).
+
+### Quick start
 
 ```bash
+# Interactive (prompts before destructive steps)
 sudo bash /opt/familygram/deploy/uninstall.sh
-sudo bash /opt/familygram/deploy/uninstall.sh --yes              # no prompt
-sudo bash /opt/familygram/deploy/uninstall.sh --keep-data          # keep .env + data/
-sudo bash /opt/familygram/deploy/uninstall.sh --keep-repo --yes    # stop stack, keep git clone
+
+# Non-interactive full removal
+sudo bash /opt/familygram/deploy/uninstall.sh --yes
 ```
 
-Also remove NPM proxy hosts, UFW rules, and DNS/port-forwards manually if you used them.
+From a fresh clone (before install dir is removed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/CyberoniOntoni/familygram/main/deploy/uninstall.sh -o uninstall.sh
+sudo bash uninstall.sh --install-dir /opt/familygram --yes
+```
+
+### Options
+
+| Flag | Effect |
+|------|--------|
+| `--install-dir PATH` | Install root (default `/opt/familygram`) |
+| `--yes`, `-y` | Skip confirmation prompt |
+| `--keep-data` | Keep `docker/compose/data/` and `.env` |
+| `--keep-repo` | Keep the git clone; only stop containers and remove data (unless `--keep-data`) |
+| `--remove-images` | Remove `familygram/familygram-web:local` after shutdown |
+| `--help` | Show usage |
+
+### Common scenarios
+
+**Full wipe** (reinstall from scratch later):
+
+```bash
+sudo bash /opt/familygram/deploy/uninstall.sh --yes
+```
+
+**Stop containers but keep database and secrets** (same machine, reconfigure):
+
+```bash
+sudo bash /opt/familygram/deploy/uninstall.sh --keep-data --keep-repo --yes
+cd /opt/familygram/docker/compose
+COMPOSE_PROFILES=web,bot docker compose up -d
+```
+
+**Remove stack but keep the repo** for manual inspection or `git pull` before reinstall:
+
+```bash
+sudo bash /opt/familygram/deploy/uninstall.sh --keep-repo --yes
+```
+
+**Custom install directory:**
+
+```bash
+sudo bash /path/to/familygram/deploy/uninstall.sh --install-dir /opt/familygram --yes
+```
+
+### Manual cleanup (not done by the script)
+
+If you used the installer’s port-forward / NPM checklist, also remove:
+
+| Item | Where |
+|------|--------|
+| Web reverse proxy | Nginx Proxy Manager — delete proxy host for `WEB_DOMAIN` (e.g. `web.example.com` → `:8082`) |
+| Passkey HTTPS proxy | NPM host for passkey domain → `:30443` (if passkey was enabled) |
+| UFW rules | `sudo ufw status numbered` — delete FamilyGram MTProto, TURN, and web port rules |
+| Legacy host nginx | `/etc/nginx/sites-enabled/familygram-web` if you used manual web deploy before Docker web |
+| DNS | Cloudflare/registrar A records for web and passkey hostnames |
+| Router | Port forwards for MTProto (`20443`–`20646`), STUN/TURN, optional RTMP |
+
+Docker itself, Node.js (nvm), and system packages installed by the wizard are left in place so other workloads on the VM are unaffected.
 
 ## Web client details
 
