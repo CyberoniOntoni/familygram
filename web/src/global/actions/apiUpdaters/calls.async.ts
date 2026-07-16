@@ -27,6 +27,7 @@ import {
 
 let phoneCallSignalingDataPromise = Promise.resolve();
 let groupCallNegotiationPromise = Promise.resolve();
+const confirmingPhoneCallIds = new Set<string>();
 
 type QueuedPhoneCallSignalingData = {
   callId?: string;
@@ -153,7 +154,11 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
           ...(call.needRating && { ratingPhoneCall: call }),
           isCallPanelVisible: undefined,
         }, getCurrentTabId());
-      } else if (state === 'accepted' && accessHash && gB) {
+      } else if (state === 'accepted' && accessHash && gB && isOutgoing) {
+        if (confirmingPhoneCallIds.has(call.id)) {
+          return global;
+        }
+        confirmingPhoneCallIds.add(call.id);
         (async () => {
           try {
             const activeCallId = call.id;
@@ -199,6 +204,8 @@ addActionHandler('apiUpdate', (global, actions, update): ActionReturnType => {
               callId: call.id,
               error: err instanceof Error ? err.message : String(err),
             });
+          } finally {
+            confirmingPhoneCallIds.delete(call.id);
           }
         })();
       } else if (state === 'active' && connections && phoneCall?.state !== 'active') {
