@@ -112,9 +112,9 @@ services:
     networks:
       - tg-net
     ports:
-      - "5348:5348"
-      - "5348:5348/udp"
-      - "49152-49172:49152-49172/udp"
+      - "${PORT_STUN:-5348}:${PORT_STUN:-5348}"
+      - "${PORT_STUN:-5348}:${PORT_STUN:-5348}/udp"
+      - "${PORT_RELAY_MIN:-49152}-${PORT_RELAY_MAX:-49172}:${PORT_RELAY_MIN:-49152}-${PORT_RELAY_MAX:-49172}/udp"
     volumes:
       - ./data/coturn:/var/lib/coturn
     command: >
@@ -124,9 +124,9 @@ services:
       --external-ip=${COTURN_EXTERNAL_IP:-${App__WebRtcConnections__0__Ip:-127.0.0.1}}
       --realm=testgram
       --server-name=testgram
-      --listening-port=5348
-      --min-port=49152
-      --max-port=49172
+      --listening-port=${PORT_STUN:-5348}
+      --min-port=${PORT_RELAY_MIN:-49152}
+      --max-port=${PORT_RELAY_MAX:-49172}
       --fingerprint
       --lt-cred-mech
       --no-tls

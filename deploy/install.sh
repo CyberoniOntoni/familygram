@@ -31,7 +31,9 @@
 #   --help               show help
 set -euo pipefail
 
-INSTALLER_VERSION="4.2.2"
+INSTALLER_ARGS=("$@")
+
+INSTALLER_VERSION="4.2.3"
 
 REPO_URL="${REPO_URL:-https://github.com/CyberoniOntoni/familygram.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
@@ -40,7 +42,7 @@ COMPOSE_DIR="${INSTALL_DIR}/docker/compose"
 COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
 
 DO_START=false
-DO_FIREWALL=true
+DO_FIREWALL="${DO_FIREWALL:-true}"
 NON_INTERACTIVE=false
 INSTALL_DOCKER="${INSTALL_DOCKER:-}"
 CUSTOMIZE_PORTS="${CUSTOMIZE_PORTS:-}"
@@ -160,7 +162,7 @@ if [[ -f "${LOCAL_REPO_ROOT}/docker/compose/.env.example" ]]; then
   COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
 fi
 
-maybe_self_update "$@"
+maybe_self_update "${INSTALLER_ARGS[@]}"
 setup_interactive_stdin
 
 [[ "$(id -u)" -eq 0 ]] || die "Run as root: sudo bash install.sh"
@@ -186,6 +188,7 @@ if [[ "${NON_INTERACTIVE}" == true ]]; then
     ENABLE_BOT="${ENABLE_BOT:-no}"
     BOT_TOKEN=""
   elif [[ -n "${BOT_TOKEN}" ]]; then
+    [[ "${BOT_TOKEN}" =~ ^[0-9]+:[A-Za-z0-9_-]+$ ]] || die "Invalid BOT_TOKEN format (expected 123456789:AAH...)"
     ENABLE_BOT="${ENABLE_BOT:-yes}"
     FIXED_VERIFY_CODE=""
   else

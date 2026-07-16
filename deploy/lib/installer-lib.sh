@@ -627,6 +627,9 @@ write_env_file() {
 
   set_env RTMP_PORT "${PORT_RTMP:-1935}"
   set_env RTMP_HLS_PORT "${PORT_RTMP_HLS:-8888}"
+  set_env PORT_STUN "$PORT_STUN"
+  set_env PORT_RELAY_MIN "$PORT_RELAY_MIN"
+  set_env PORT_RELAY_MAX "$PORT_RELAY_MAX"
 
   set_env COTURN_EXTERNAL_IP "$PUBLIC_IP"
   set_env TELEGRAM_API_ID "$TELEGRAM_API_ID"
@@ -662,19 +665,9 @@ EOF
 }
 
 patch_compose() {
-  local file="$1" turn_pass_escaped
-  [[ -f "$file" ]] || die "Missing ${file}"
-  turn_pass_escaped="$(escape_sed_repl "${TURN_PASS}")"
-
-  sed -i \
-    -e "s|\"5348:5348\"|\"${PORT_STUN}:${PORT_STUN}\"|g" \
-    -e "s|\"5348:5348/udp\"|\"${PORT_STUN}:${PORT_STUN}/udp\"|g" \
-    -e "s|49152-49172:49152-49172|${PORT_RELAY_MIN}-${PORT_RELAY_MAX}:${PORT_RELAY_MIN}-${PORT_RELAY_MAX}|g" \
-    -e "s|--listening-port 5348|--listening-port ${PORT_STUN}|g" \
-    -e "s|--min-port 49152|--min-port ${PORT_RELAY_MIN}|g" \
-    -e "s|--max-port 49172|--max-port ${PORT_RELAY_MAX}|g" \
-    -e "s|--user testgram:testgram2024|--user ${TURN_USER}:${turn_pass_escaped}|g" \
-    "$file"
+  # Coturn ports/credentials come from .env (PORT_STUN, PORT_RELAY_*, App__WebRtcConnections__*).
+  # Kept for compatibility with verify-installer backups; no tracked compose edits.
+  :
 }
 
 prepare_data_dirs() {

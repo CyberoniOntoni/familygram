@@ -84,6 +84,11 @@ run_dry_run() {
   write_compose_override
   validate_required_env
 
+  if [[ "${PORT_STUN:-}" == "15348" ]]; then
+    grep -q '^PORT_STUN=15348$' .env || { echo "    missing PORT_STUN=15348 in .env"; return 1; }
+    grep -q '^PORT_RELAY_MIN=59200$' .env || { echo "    missing PORT_RELAY_MIN=59200 in .env"; return 1; }
+  fi
+
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     compose_with_profiles config -q >/dev/null
     echo "    docker compose config OK (profiles: $(compose_profile_list || echo none))"
@@ -101,6 +106,17 @@ run_dry_run "@BotFather bot" \
 run_dry_run "passkey + bot" \
   ENABLE_BOT=yes BOT_TOKEN='123456789:AAHfake_token_for_test' FIXED_VERIFY_CODE= \
   ENABLE_PASSKEY=yes PASSKEY_DOMAIN=tg.example.com
+
+run_dry_run "passkey + fixed code" \
+  ENABLE_BOT=no BOT_TOKEN= FIXED_VERIFY_CODE=280963 \
+  ENABLE_PASSKEY=yes PASSKEY_DOMAIN=tg.example.com
+
+run_dry_run "web disabled (server only)" \
+  ENABLE_WEB=no TELEGRAM_API_ID= TELEGRAM_API_HASH= WEB_DOMAIN=
+
+run_dry_run "custom STUN/TURN ports" \
+  ENABLE_BOT=no BOT_TOKEN= FIXED_VERIFY_CODE=12345 \
+  PORT_STUN=15348 PORT_RELAY_MIN=59200 PORT_RELAY_MAX=59220
 
 echo ""
 echo "OK — installer fills required parameters for all login modes"
