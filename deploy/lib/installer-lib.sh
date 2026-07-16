@@ -597,8 +597,24 @@ write_env_file() {
 
   set_env App__WebRtcConnections__0__Ip "$PUBLIC_IP"
   set_env App__WebRtcConnections__0__Port "$PORT_STUN"
-  set_env App__WebRtcConnections__0__UserName "$TURN_USER"
+  set_env App__WebRtcConnections__0__Turn "True"
+  set_env App__WebRtcConnections__0__Stun "True"
+  set_env App__WebRtcConnections__0__UserName "${TURN_USER:-testgram}"
   set_env App__WebRtcConnections__0__Password "$TURN_PASS"
+
+  set_env TwilioSms__Enabled "False"
+  set_env TwilioSms__AccountSId ""
+  set_env TwilioSms__AuthToken ""
+  set_env TwilioSms__FromNumber ""
+  set_env TwilioSms__MessagingServiceSId ""
+
+  if [[ "${ENABLE_RTMP}" == "yes" ]]; then
+    set_env App__RtmpStreamUrl "rtmp://${PUBLIC_IP}:${PORT_RTMP:-1935}/live"
+    set_env App__RtmpHlsUrl "http://${PUBLIC_IP}:${PORT_RTMP_HLS:-8888}/hls"
+  else
+    set_env App__RtmpStreamUrl ""
+    set_env App__RtmpHlsUrl ""
+  fi
 
   local i
   for i in 0 1 2 3; do
@@ -609,8 +625,8 @@ write_env_file() {
   set_env App__DcOptions__2__Port "$PORT_MT3"
   set_env App__DcOptions__3__Port "$PORT_MT4"
 
-  set_env RTMP_PORT "$PORT_RTMP"
-  set_env RTMP_HLS_PORT "$PORT_RTMP_HLS"
+  set_env RTMP_PORT "${PORT_RTMP:-1935}"
+  set_env RTMP_HLS_PORT "${PORT_RTMP_HLS:-8888}"
 
   set_env COTURN_EXTERNAL_IP "$PUBLIC_IP"
   set_env TELEGRAM_API_ID "$TELEGRAM_API_ID"
@@ -809,28 +825,94 @@ print_config_review() {
   hr
 }
 
+compose_profile_list() {
+  local profiles=()
+  [[ "${ENABLE_BOT}" == "yes" ]] && profiles+=(bot)
+  [[ "${ENABLE_WEB}" == "yes" ]] && profiles+=(web)
+  if ((${#profiles[@]} > 0)); then
+    local IFS=,
+    printf '%s' "${profiles[*]}"
+  fi
+}
+
 compose_with_profiles() {
-  if [[ "${ENABLE_BOT}" == "yes" ]]; then
-    COMPOSE_PROFILES=bot docker compose "$@"
+  local profiles
+  profiles="$(compose_profile_list)"
+  if [[ -n "${profiles}" ]]; then
+    COMPOSE_PROFILES="${profiles}" docker compose "$@"
   else
     docker compose "$@"
   fi
 }
 
 compose_hint() {
-  if [[ "${ENABLE_BOT}" == "yes" ]]; then
-    printf 'COMPOSE_PROFILES=bot docker compose'
+  local profiles
+  profiles="$(compose_profile_list)"
+  if [[ -n "${profiles}" ]]; then
+    printf 'COMPOSE_PROFILES=%s docker compose' "${profiles}"
   else
     printf 'docker compose'
   fi
 }
 
+validate_required_env() {
+  local env_file="${COMPOSE_DIR}/.env"
+  local -a missing=()
+  local key val
+
+  [[ -f "${env_file}" ]] || die "Missing ${env_file}"
+
+  require_env_nonempty() {
+    local k="$1"
+    val="$(grep -E "^${k}=" "${env_file}" | tail -1 | cut -d= -f2- || true)"
+    if [[ -z "${val}" ]]; then
+      missing+=("${k}")
+    fi
+  }
+
+  require_env_nonempty RabbitMQ__Connections__Default__Password
+  require_env_nonempty Minio__SecretKey
+  require_env_nonempty Minio__BucketName
+  require_env_nonempty App__AccessHashSecretKey
+  require_env_nonempty App__EncryptionConfig__MessageKeys__0__Key
+  require_env_nonempty App__EncryptionConfig__IndexKeys__0__Key
+  require_env_nonempty App__DcOptions__0__IpAddress
+  require_env_nonempty App__WebRtcConnections__0__Ip
+  require_env_nonempty App__WebRtcConnections__0__Password
+  require_env_nonempty App__Servers__0__Enabled
+  require_env_nonempty COTURN_EXTERNAL_IP
+
+  if [[ "${ENABLE_WEB}" == "yes" ]]; then
+    require_env_nonempty TELEGRAM_API_ID
+    require_env_nonempty TELEGRAM_API_HASH
+    require_env_nonempty WEB_DOMAIN
+    require_env_nonempty WEB_BASE_URL
+  fi
+
+  if [[ "${ENABLE_BOT}" == "yes" ]]; then
+    require_env_nonempty BOT_TOKEN
+  else
+    require_env_nonempty App__FixedVerifyCode
+  fi
+
+  if ((${#missing[@]} > 0)); then
+    die "Installer .env is missing required values: ${missing[*]}"
+  fi
+
+  log "Required .env parameters present ($(wc -l < "${env_file}") lines)"
+}
+
 validate_compose_stack() {
   [[ -f "${COMPOSE_FILE}" ]] || die "Missing ${COMPOSE_FILE} — clone or install dir wrong?"
   [[ -f "${COMPOSE_DIR}/.env.example" ]] || die "Missing ${COMPOSE_DIR}/.env.example"
-  log "Validating docker compose configuration..."
-  compose_with_profiles config -q >/dev/null \
-    || die "docker compose config failed — check ${COMPOSE_DIR}/.env and compose files"
+  validate_required_env
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    log "Validating docker compose configuration..."
+    compose_with_profiles config -q >/dev/null \
+      || die "docker compose config failed — check ${COMPOSE_DIR}/.env and compose files"
+  else
+    warn "Docker not available — skipped compose config validation"
+  fi
 }
 
 start_stack() {
@@ -842,10 +924,8 @@ start_stack() {
     compose_with_profiles build familygram-web
   fi
 
-  log "Starting FamilyGram stack..."
-  if [[ "${ENABLE_BOT}" == "yes" ]]; then
-    log "Verification bot enabled (COMPOSE_PROFILES=bot)"
-  else
+  log "Starting FamilyGram stack (profiles: $(compose_profile_list || echo default))..."
+  if [[ "${ENABLE_BOT}" != "yes" ]]; then
     log "Using fixed login code — verification bot skipped"
   fi
   compose_with_profiles up -d
