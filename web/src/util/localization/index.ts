@@ -225,6 +225,38 @@ function createFormatters() {
   resetDateFormatCache();
 }
 
+function hasRenderableTranslation(value: LangPackStringValue | undefined) {
+  if (!value || isDeletedLangString(value)) return false;
+  if (typeof value === 'string') return value.length > 0;
+  if (isPluralLangString(value)) {
+    return Boolean(value.other || value.one || value.few || value.many || value.two || value.zero);
+  }
+  return false;
+}
+
+async function mergeWithSelfHostedFallback(pack: LangPack) {
+  if (!IS_FAMILYGRAM) return pack;
+
+  await loadFallbackPack();
+  if (!fallbackLangPack) return pack;
+
+  const mergedStrings = { ...fallbackLangPack.strings };
+  Object.entries(pack.strings).forEach(([key, value]) => {
+    if (hasRenderableTranslation(value)) {
+      mergedStrings[key] = value;
+    }
+  });
+
+  if (familyGramOverrides) {
+    Object.assign(mergedStrings, familyGramOverrides);
+  }
+
+  return {
+    ...pack,
+    strings: mergedStrings,
+  };
+}
+
 function updateLangPack(newLangPack: LangPack) {
   langPack = newLangPack;
 
@@ -238,7 +270,7 @@ export async function initLocalization(langCode: string, canLoadFromServer?: boo
 
   const cachedData = await loadCachedLangData(langCode);
   if (cachedData) {
-    langPack = cachedData.langPack;
+    langPack = await mergeWithSelfHostedFallback(cachedData.langPack);
     language = cachedData.language;
     createFormatters();
 
@@ -302,7 +334,7 @@ export async function changeLanguage(newLanguage: ApiLanguage) {
 
   const cachedData = await loadCachedLangData(newLanguage.langCode);
   if (cachedData) {
-    updateLangPack(cachedData.langPack);
+    updateLangPack(await mergeWithSelfHostedFallback(cachedData.langPack));
     updateLanguage(cachedData.language);
 
     fetchDifference();
@@ -319,11 +351,11 @@ export async function changeLanguage(newLanguage: ApiLanguage) {
       return;
     }
 
-    updateLangPack({
+    updateLangPack(await mergeWithSelfHostedFallback({
       langCode: newLanguage.langCode,
       version: remoteLangPack.version,
       strings: remoteLangPack.strings,
-    });
+    }));
     updateLanguage(newLanguage);
 
     cacheLangData({

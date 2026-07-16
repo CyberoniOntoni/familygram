@@ -243,6 +243,38 @@ Server binaries are pulled from [CyberoniOntoni/testgram](https://github.com/Cyb
 | Web source (standalone) | [CyberoniOntoni/familygram-web](https://github.com/CyberoniOntoni/familygram-web) |
 | Desktop | [CyberoniOntoni/familygram-desktop](https://github.com/CyberoniOntoni/familygram-desktop) |
 
+## Language packs (English / Russian)
+
+FamilyGram Web loads UI strings from the **Testgram server** (`langpack.getLangPack`, pack `weba`). The data-seeder only imported **Russian** in older images; **English** was missing or incomplete, so menus showed raw keys while Russian looked fine.
+
+**Fix (server):** This repo ships `docker/compose/langpacks/en/android.json` (~11k strings from [translations.telegram.org](https://translations.telegram.org/en/android/)). The installer copies it into `data/mytelegram/data-seeder/downloads/langpacks/`. You need a **testgram data-seeder image** that imports both `ru` and `en` (see [CyberoniOntoni/testgram](https://github.com/CyberoniOntoni/testgram) `LanguagePackDataSeeder`).
+
+On an existing host:
+
+```bash
+cd /opt/familygram
+git pull
+# Ensure English pack is present
+ls docker/compose/langpacks/en/android.json
+cp -a docker/compose/langpacks/. docker/compose/data/mytelegram/data-seeder/downloads/langpacks/
+cd docker/compose
+docker compose pull data-seeder   # image with en+ru import support
+docker compose restart data-seeder messenger-query-server
+docker compose build familygram-web --no-cache   # client merges bundled fallback for gaps
+docker compose up -d familygram-web
+```
+
+Refresh the browser (clear site data if strings are still cached in IndexedDB).
+
+Regenerate packs from upstream:
+
+```bash
+bash deploy/fetch-langpacks.sh              # English
+FETCH_RU=yes bash deploy/fetch-langpacks.sh # English + Russian
+```
+
+Russian is also bundled in the testgram image; if `data-seeder` logs `Russian language pack file is missing`, copy from the image — see [testgram README](https://github.com/CyberoniOntoni/testgram/blob/main/README.md#data-seeder--russian-language-pack-file-is-missing).
+
 ## Web client details
 
 See [`web/README-FAMILYGRAM.md`](web/README-FAMILYGRAM.md) for TL layer-224 compatibility patches, dev mode, and troubleshooting.

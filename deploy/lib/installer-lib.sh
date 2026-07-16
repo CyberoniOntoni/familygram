@@ -673,8 +673,17 @@ patch_compose() {
 prepare_data_dirs() {
   log "Preparing data directories..."
   mkdir -p data/mytelegram data/bot geoip data/redis data/rabbitmq \
-    data/mongo/db data/mongo/configdb data/minio data/coturn data/rtmp
+    data/mongo/db data/mongo/configdb data/minio data/coturn data/rtmp \
+    data/mytelegram/data-seeder/downloads/langpacks
   chmod -R a+w data
+
+  local langpack_src="${COMPOSE_DIR}/langpacks"
+  local langpack_dst="${COMPOSE_DIR}/data/mytelegram/data-seeder/downloads/langpacks"
+  if [[ -d "${langpack_src}" ]]; then
+    log "Installing language pack files for data-seeder..."
+    mkdir -p "${langpack_dst}"
+    cp -a "${langpack_src}/." "${langpack_dst}/"
+  fi
 }
 
 save_install_summary() {
