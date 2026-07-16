@@ -1,13 +1,43 @@
 # FamilyGram
 
-Unified self-hosted Telegram-compatible stack: **Testgram server** + **FamilyGram Web** client in one Docker Compose package.
+**FamilyGram** is a self-hosted, private messaging platform for families, teams, and small communities. It gives you a Telegram-like experience — chats, groups, media, voice/video calls, and a modern web app — on **your own server**, without depending on Telegram’s cloud.
+
+This repository is the **unified deployment package**: it wires together the backend ([Testgram](https://github.com/CyberoniOntoni/testgram), a [MyTelegram](https://github.com/loyldg/mytelegram) fork) and the web client ([FamilyGram Web](web/), a [telegram-tt](https://github.com/Ajaxy/telegram-tt) fork) into one Docker Compose stack with an interactive installer.
+
+## What this project is
+
+FamilyGram is **not** a hosted service and **not** a connection to telegram.org. You run the full stack yourself (typically on a VPS, Proxmox VM, or home lab). Clients talk to **your** public IP or domain; messages, files, and account data stay on **your** infrastructure.
+
+| Layer | What it does |
+|-------|----------------|
+| **Testgram server** | MTProto gateway, authentication, messaging, file storage (MinIO), voice/video (Coturn/TURN), optional verification bot |
+| **FamilyGram Web** | Browser UI that connects to your server over WebSocket MTProto (`/apiws`) |
+| **Docker Compose** | MongoDB, Redis, RabbitMQ, and all services orchestrated as one stack |
+| **Installer** | Guided setup: IPs, branding, login mode, firewall, `.env`, and first start |
+
+Native clients ([FamilyGram Desktop](https://github.com/CyberoniOntoni/familygram-desktop)) can also point at your server IP; the web client is included here so users can sign in from any browser.
+
+## What it is for
+
+Typical use cases:
+
+- **Private family or friend group** — a closed chat environment you control, with a familiar Telegram-style UI
+- **Small team or community** — white-label branding (`App__Brand`), your hostname, your rules
+- **Self-hosting / homelab** — learn and operate a full messaging backend without SaaS lock-in
+- **Air-gapped or fixed-code login** — use a preset login code instead of @BotFather when you do not want a Telegram bot in the loop
+
+**Good fit:** you are comfortable with Linux, Docker, router port forwards, and a reverse proxy for HTTPS.
+
+**Not a fit:** you want official Telegram accounts, Telegram Cloud sync, or a zero-ops managed product — use [telegram.org](https://telegram.org) instead.
+
+## Components in this repo
 
 | Component | Path | Description |
 |-----------|------|-------------|
 | Server | GHCR `cyberoniontoni/testgram` images | MTProto gateway, auth, messaging, calls (Coturn) |
 | Web | [`web/`](web/) | [telegram-tt](https://github.com/Ajaxy/telegram-tt) fork, built into `familygram-web` container |
 | Compose | [`docker/compose/`](docker/compose/) | Full stack including nginx web front-end |
-| Installer | [`deploy/install.sh`](deploy/install.sh) | Interactive setup wizard |
+| Installer | [`deploy/install.sh`](deploy/install.sh) | Interactive setup wizard (v4.2.x) |
 
 ## Quick install
 
