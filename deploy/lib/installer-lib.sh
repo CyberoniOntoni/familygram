@@ -681,9 +681,17 @@ prepare_data_dirs() {
   local langpack_src="${COMPOSE_DIR}/langpacks"
   local langpack_dst="${COMPOSE_DIR}/data/mytelegram/data-seeder/downloads/langpacks"
   if [[ -d "${langpack_src}" ]]; then
-    log "Installing language pack files for data-seeder..."
+    log "Installing language pack files for data-seeder (en + ru)..."
     mkdir -p "${langpack_dst}"
     cp -a "${langpack_src}/." "${langpack_dst}/"
+    local lang
+    for lang in en ru; do
+      if [[ ! -f "${langpack_dst}/${lang}/android.json" ]]; then
+        warn "Missing ${langpack_dst}/${lang}/android.json — run: bash deploy/fetch-langpacks.sh"
+      fi
+    done
+  else
+    warn "Missing ${langpack_src} — English/Russian UI packs will not be seeded"
   fi
 }
 

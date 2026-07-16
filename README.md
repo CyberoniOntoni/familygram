@@ -259,35 +259,43 @@ Server binaries are pulled from [CyberoniOntoni/FamilyGram-Server](https://githu
 
 ## Language packs (English / Russian)
 
-FamilyGram Web loads UI strings from **FamilyGram Server** (`langpack.getLangPack`, pack `weba`). The data-seeder only imported **Russian** in older images; **English** was missing or incomplete, so menus showed raw keys while Russian looked fine.
+FamilyGram Web loads UI strings from **FamilyGram Server** (`langpack.getLanguages` / `langpack.getLangPack`). The installer copies bundled packs into the data-seeder:
 
-**Fix (server):** This repo ships `docker/compose/langpacks/en/android.json` (~11k strings from [translations.telegram.org](https://translations.telegram.org/en/android/)). The installer copies it into `data/mytelegram/data-seeder/downloads/langpacks/`. You need a **FamilyGram Server data-seeder image** that imports both `ru` and `en` (see [FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) `LanguagePackDataSeeder`).
+- `docker/compose/langpacks/en/android.json`
+- `docker/compose/langpacks/ru/android.json`
 
-On an existing host:
+Both are imported on first boot by [FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) `LanguagePackDataSeeder`, so **English** and **Russian** appear in the client language picker.
+
+On an existing host (after `git pull`):
 
 ```bash
 cd /opt/familygram
-git pull
-# Ensure English pack is present
-ls docker/compose/langpacks/en/android.json
+ls docker/compose/langpacks/{en,ru}/android.json
 cp -a docker/compose/langpacks/. docker/compose/data/mytelegram/data-seeder/downloads/langpacks/
 cd docker/compose
-docker compose pull data-seeder   # image with en+ru import support
 docker compose restart data-seeder messenger-query-server
-docker compose build familygram-web --no-cache   # client merges bundled fallback for gaps
-docker compose up -d familygram-web
 ```
 
-Refresh the browser (clear site data if strings are still cached in IndexedDB).
+Refresh the browser (clear site data if strings are cached in IndexedDB).
 
-Regenerate packs from upstream:
+Regenerate packs from [translations.telegram.org](https://translations.telegram.org):
 
 ```bash
-bash deploy/fetch-langpacks.sh              # English
-FETCH_RU=yes bash deploy/fetch-langpacks.sh # English + Russian
+bash deploy/fetch-langpacks.sh
 ```
 
-Russian is also bundled in the FamilyGram Server image; if `data-seeder` logs `Russian language pack file is missing`, copy from the image — see [FamilyGram-Server README](https://github.com/CyberoniOntoni/FamilyGram-Server/blob/dev/README.md#data-seeder--language-pack-file-is-missing).
+## Uninstall
+
+Remove the Docker stack (containers, data, and `/opt/familygram` by default):
+
+```bash
+sudo bash /opt/familygram/deploy/uninstall.sh
+sudo bash /opt/familygram/deploy/uninstall.sh --yes              # no prompt
+sudo bash /opt/familygram/deploy/uninstall.sh --keep-data          # keep .env + data/
+sudo bash /opt/familygram/deploy/uninstall.sh --keep-repo --yes    # stop stack, keep git clone
+```
+
+Also remove NPM proxy hosts, UFW rules, and DNS/port-forwards manually if you used them.
 
 ## Web client details
 

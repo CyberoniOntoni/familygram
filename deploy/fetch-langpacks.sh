@@ -25,13 +25,10 @@ command -v node >/dev/null 2>&1 || { echo "Node.js required"; exit 1; }
 command -v curl >/dev/null 2>&1 || { echo "curl required"; exit 1; }
 
 fetch_lang en
-
-if [[ "${FETCH_RU:-no}" == "yes" ]]; then
-  fetch_lang ru
-fi
+fetch_lang ru
 
 echo ""
-echo "Language packs written under ${OUT_ROOT}"
+echo "Language packs written under ${OUT_ROOT} (en + ru)"
 echo "On a running stack, copy into data-seeder downloads and restart:"
 echo "  cp -a docker/compose/langpacks/. docker/compose/data/mytelegram/data-seeder/downloads/langpacks/"
 echo "  cd docker/compose && docker compose restart data-seeder messenger-query-server"

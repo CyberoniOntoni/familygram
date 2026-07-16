@@ -14,6 +14,15 @@ bash -n "${INSTALL_SH}"
 echo "==> bash -n installer-lib.sh"
 bash -n "${INSTALLER_LIB}"
 
+echo "==> bash -n uninstall.sh"
+bash -n "${ROOT}/deploy/uninstall.sh"
+
+echo "==> language packs bundled (en + ru)"
+for lang in en ru; do
+  [[ -f "${COMPOSE_DIR}/langpacks/${lang}/android.json" ]] \
+    || { echo "missing ${COMPOSE_DIR}/langpacks/${lang}/android.json" >&2; exit 1; }
+done
+
 # shellcheck source=lib/installer-lib.sh
 source "${INSTALLER_LIB}"
 installer_lib_init
