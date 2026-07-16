@@ -41,16 +41,15 @@ Typical use cases:
 
 ## Migrating from Testgram
 
-If you deployed before the **FamilyGram-Server** rename:
+If you deployed before the **FamilyGram-Server** rename (repo was `CyberoniOntoni/testgram`):
 
-1. On GitHub, rename `CyberoniOntoni/testgram` → `FamilyGram-Server` (Settings → General → Repository name). GHCR packages move to `ghcr.io/cyberoniontoni/familygram-server/`.
-2. In `docker/compose/.env`, set:
+1. In `docker/compose/.env`, set:
    ```env
    FamilyGramServerRegistry=ghcr.io/cyberoniontoni/familygram-server
    FamilyGramServerVersion=latest
    ```
    (Old `TestgramRegistry` / `TestgramVersion` still work until you remove them.)
-3. `docker compose pull` then `docker compose up -d` — bot image is now `familygram-server-bot`.
+2. `docker compose pull` then `docker compose up -d` — bot image is now `familygram-server-bot`.
 
 Unified installs use the [familygram](https://github.com/CyberoniOntoni/familygram) repo only; no need to clone FamilyGram-Server separately.
 
