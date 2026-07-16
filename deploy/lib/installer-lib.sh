@@ -578,6 +578,7 @@ write_env_file() {
   set_env App__SendWelcomeMessageAfterUserSignIn "True"
   set_env App__PasskeyRpId "$PASSKEY_DOMAIN"
   set_env App__PasskeyRpName "$BRAND"
+  set_env EmailSenderOptions__FromDisplayName "$BRAND"
   if [[ "${ENABLE_BOT}" == "yes" ]]; then
     set_env BOT_TOKEN "$BOT_TOKEN"
     set_env TelegramBotSms__Enabled "true"
