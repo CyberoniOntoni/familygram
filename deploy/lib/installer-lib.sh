@@ -251,11 +251,11 @@ setup_interactive_stdin() {
 Do NOT pipe this script (curl ... | bash) — that steals stdin and skips prompts.
 
 Instead:
-  curl -fsSL https://raw.githubusercontent.com/CyberoniOntoni/testgram/dev/deploy/install.sh -o install.sh
-  bash install.sh
+  curl -fsSL https://raw.githubusercontent.com/CyberoniOntoni/familygram/main/deploy/install.sh -o install.sh
+  sudo bash install.sh
 
 Or pass all values explicitly:
-  PUBLIC_IP=... LAN_IP=... BOT_TOKEN=... bash install.sh --non-interactive"
+  PUBLIC_IP=... LAN_IP=... BOT_TOKEN=... sudo bash install.sh --non-interactive"
 }
 
 trim_line() {
@@ -799,7 +799,7 @@ print_config_review() {
   fi
   ui_printf '  %-22s %s\n' "Install Docker:" "${INSTALL_DOCKER}"
   ui_printf '  %-22s %s\n' "Configure UFW:" "${DO_FIREWALL}"
-  if [[ "${ENABLE_BOT}" == "yes" ]]; then
+  if [[ "${ENABLE_BOT:-yes}" == "yes" ]]; then
     ui_printf '  %-22s %s\n' "Login codes:" "@BotFather bot (${BOT_TOKEN:0:12}...)"
   else
     ui_printf '  %-22s %s\n' "Login codes:" "Fixed code (${FIXED_VERIFY_CODE})"
@@ -815,6 +815,22 @@ compose_with_profiles() {
   else
     docker compose "$@"
   fi
+}
+
+compose_hint() {
+  if [[ "${ENABLE_BOT}" == "yes" ]]; then
+    printf 'COMPOSE_PROFILES=bot docker compose'
+  else
+    printf 'docker compose'
+  fi
+}
+
+validate_compose_stack() {
+  [[ -f "${COMPOSE_FILE}" ]] || die "Missing ${COMPOSE_FILE} — clone or install dir wrong?"
+  [[ -f "${COMPOSE_DIR}/.env.example" ]] || die "Missing ${COMPOSE_DIR}/.env.example"
+  log "Validating docker compose configuration..."
+  compose_with_profiles config -q >/dev/null \
+    || die "docker compose config failed — check ${COMPOSE_DIR}/.env and compose files"
 }
 
 start_stack() {
@@ -837,13 +853,13 @@ start_stack() {
   log "Waiting for gateway-server (up to 120s)..."
   local i
   for i in $(seq 1 24); do
-    if docker compose logs gateway-server 2>/dev/null | grep -q "${PORT_MT1}"; then
+    if compose_with_profiles logs gateway-server 2>/dev/null | grep -q "${PORT_MT1}"; then
       log "Gateway is listening on port ${PORT_MT1}"
       return 0
     fi
     sleep 5
   done
-  warn "Gateway did not log port ${PORT_MT1} yet — check: docker compose logs gateway-server"
+  warn "Gateway did not log port ${PORT_MT1} yet — check: $(compose_hint) logs gateway-server"
 }
 
 prompt_api_credentials() {
@@ -1054,28 +1070,29 @@ run_install_apply() {
   patch_compose "${COMPOSE_FILE}"
   write_compose_override
   prepare_data_dirs
+  validate_compose_stack
   save_install_summary
   configure_firewall
   print_port_forwards
 
   if [[ "${DO_START}" == true ]]; then
     start_stack
-    docker compose ps
+    compose_with_profiles ps
   elif [[ "${NON_INTERACTIVE}" != true ]]; then
     ui_printf '\n'
     if confirm "Start docker compose now?"; then
       start_stack
-      docker compose ps
+      compose_with_profiles ps
     else
       log "Stack not started. When ready:"
-      ui_printf '    cd %s && docker compose up -d\n' "${COMPOSE_DIR}"
+      ui_printf '    cd %s && %s up -d\n' "${COMPOSE_DIR}" "$(compose_hint)"
     fi
   fi
 
   ui_printf '\n%sDone — FamilyGram stack is ready%s\n\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"
   ui_printf '  .env:      %s/.env\n' "${COMPOSE_DIR}"
   ui_printf '  Summary:   %s\n' "${SUMMARY_FILE}"
-  ui_printf '  Logs:      cd %s && docker compose logs -f\n' "${COMPOSE_DIR}"
+  ui_printf '  Logs:      cd %s && %s logs -f\n' "${COMPOSE_DIR}" "$(compose_hint)"
   if [[ "${ENABLE_WEB}" == "yes" && -n "${WEB_DOMAIN}" ]]; then
     ui_printf '  Web UI:    https://%s/ (after reverse proxy is configured)\n' "${WEB_DOMAIN}"
     ui_printf '  Local:     http://%s:%s/\n' "${LAN_IP}" "${WEB_HOST_PORT}"

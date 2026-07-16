@@ -31,7 +31,7 @@
 #   --help               show help
 set -euo pipefail
 
-INSTALLER_VERSION="4.2.0"
+INSTALLER_VERSION="4.2.1"
 
 REPO_URL="${REPO_URL:-https://github.com/CyberoniOntoni/familygram.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
@@ -140,7 +140,7 @@ while [[ $# -gt 0 ]]; do
     --public-ip) PUBLIC_IP="${2:-}"; shift 2 ;;
     --lan-ip) LAN_IP="${2:-}"; shift 2 ;;
     --brand) BRAND="${2:-}"; shift 2 ;;
-    --passkey-domain) PASSKEY_DOMAIN="${2:-}"; shift 2 ;;
+    --passkey-domain) PASSKEY_DOMAIN="${2:-}"; ENABLE_PASSKEY=yes; shift 2 ;;
     --bot-token) BOT_TOKEN="${2:-}"; shift 2 ;;
     --fixed-verify-code) FIXED_VERIFY_CODE="${2:-}"; shift 2 ;;
     --web-domain) WEB_DOMAIN="${2:-}"; shift 2 ;;
@@ -191,10 +191,14 @@ if [[ "${NON_INTERACTIVE}" == true ]]; then
   else
     die "Provide BOT_TOKEN or FIXED_VERIFY_CODE in non-interactive mode"
   fi
-  [[ -n "${TELEGRAM_API_ID}" ]] || die "TELEGRAM_API_ID required in non-interactive mode"
-  [[ -n "${TELEGRAM_API_HASH}" ]] || die "TELEGRAM_API_HASH required in non-interactive mode"
   if [[ "${ENABLE_WEB}" == "yes" ]]; then
+    [[ -n "${TELEGRAM_API_ID}" ]] || die "TELEGRAM_API_ID required when ENABLE_WEB=yes"
+    [[ -n "${TELEGRAM_API_HASH}" ]] || die "TELEGRAM_API_HASH required when ENABLE_WEB=yes"
     [[ -n "${WEB_DOMAIN}" ]] || die "WEB_DOMAIN required when ENABLE_WEB=yes"
+  else
+    TELEGRAM_API_ID="${TELEGRAM_API_ID:-0}"
+    TELEGRAM_API_HASH="${TELEGRAM_API_HASH:-disabled}"
+    WEB_DOMAIN="${WEB_DOMAIN:-}"
   fi
   if [[ "${ENABLE_PASSKEY}" == "yes" ]]; then
     [[ -n "${PASSKEY_DOMAIN}" ]] || die "PASSKEY_DOMAIN required when ENABLE_PASSKEY=yes"
