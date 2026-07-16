@@ -4,6 +4,8 @@
 
 This repository is the **unified deployment package**: it wires together the backend ([FamilyGram Server](https://github.com/CyberoniOntoni/FamilyGram-Server), a [MyTelegram](https://github.com/loyldg/mytelegram) fork) and the web client ([FamilyGram Web](web/), a [telegram-tt](https://github.com/Ajaxy/telegram-tt) fork) into one Docker Compose stack with an interactive installer.
 
+**Contents:** [Quick install](#quick-install) · [Uninstall](#uninstall) · [Networking](#networking-and-ports) · [Manual operation](#manual-operation) · [Language packs](#language-packs-english--russian)
+
 ## What this project is
 
 FamilyGram is **not** a hosted service and **not** a connection to telegram.org. You run the full stack yourself (typically on a VPS, Proxmox VM, or home lab). Clients talk to **your** public IP or domain; messages, files, and account data stay on **your** infrastructure.
@@ -14,6 +16,7 @@ FamilyGram is **not** a hosted service and **not** a connection to telegram.org.
 | **FamilyGram Web** | Browser UI that connects to your server over WebSocket MTProto (`/apiws`) |
 | **Docker Compose** | MongoDB, Redis, RabbitMQ, and all services orchestrated as one stack |
 | **Installer** | Guided setup: IPs, branding, login mode, firewall, `.env`, and first start |
+| **Uninstaller** | [`deploy/uninstall.sh`](deploy/uninstall.sh) — stop containers and remove the stack |
 
 Native clients ([FamilyGram Desktop](https://github.com/CyberoniOntoni/familygram-desktop)) can also point at your server IP (work in progress); the web client is included here so users can sign in from any browser.
 
@@ -38,6 +41,7 @@ Typical use cases:
 | Web | [`web/`](web/) | [telegram-tt](https://github.com/Ajaxy/telegram-tt) fork, built into `familygram-web` container |
 | Compose | [`docker/compose/`](docker/compose/) | Full stack including nginx web front-end |
 | Installer | [`deploy/install.sh`](deploy/install.sh) | Interactive setup wizard (v4.3.x) |
+| Uninstaller | [`deploy/uninstall.sh`](deploy/uninstall.sh) | Remove containers, data, and `/opt/familygram` |
 
 ## Migrating from Testgram
 
@@ -87,6 +91,90 @@ TELEGRAM_API_ID=12345678 TELEGRAM_API_HASH=your_api_hash \
 FIXED_VERIFY_CODE=12345 \
 sudo bash install.sh --non-interactive --start
 ```
+
+## Uninstall
+
+[`deploy/uninstall.sh`](deploy/uninstall.sh) removes the FamilyGram Docker stack installed by [`deploy/install.sh`](deploy/install.sh). Run it on the host where the stack runs (default install path: `/opt/familygram`).
+
+### What the script does
+
+1. Stops all compose services (including `web` and `bot` profiles when they were enabled at install)
+2. By default, deletes `docker/compose/data/` (MongoDB, uploads, logs, bot DB, etc.) and `.env`
+3. By default, removes the entire `/opt/familygram` directory
+4. Prints a reminder for external cleanup (NPM, firewall, DNS)
+
+GHCR server images pulled from GitHub are **not** removed unless you pass `--remove-images` (that flag only drops the locally built `familygram/familygram-web:local` image).
+
+### Quick start
+
+```bash
+# Interactive (prompts before destructive steps)
+sudo bash /opt/familygram/deploy/uninstall.sh
+
+# Non-interactive full removal
+sudo bash /opt/familygram/deploy/uninstall.sh --yes
+```
+
+From a fresh clone (before install dir is removed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/CyberoniOntoni/familygram/main/deploy/uninstall.sh -o uninstall.sh
+sudo bash uninstall.sh --install-dir /opt/familygram --yes
+```
+
+### Options
+
+| Flag | Effect |
+|------|--------|
+| `--install-dir PATH` | Install root (default `/opt/familygram`) |
+| `--yes`, `-y` | Skip confirmation prompt |
+| `--keep-data` | Keep `docker/compose/data/` and `.env` |
+| `--keep-repo` | Keep the git clone; only stop containers and remove data (unless `--keep-data`) |
+| `--remove-images` | Remove `familygram/familygram-web:local` after shutdown |
+| `--help` | Show usage |
+
+### Common scenarios
+
+**Full wipe** (reinstall from scratch later):
+
+```bash
+sudo bash /opt/familygram/deploy/uninstall.sh --yes
+```
+
+**Stop containers but keep database and secrets** (same machine, reconfigure):
+
+```bash
+sudo bash /opt/familygram/deploy/uninstall.sh --keep-data --keep-repo --yes
+cd /opt/familygram/docker/compose
+COMPOSE_PROFILES=web,bot docker compose up -d
+```
+
+**Remove stack but keep the repo** for manual inspection or `git pull` before reinstall:
+
+```bash
+sudo bash /opt/familygram/deploy/uninstall.sh --keep-repo --yes
+```
+
+**Custom install directory:**
+
+```bash
+sudo bash /path/to/familygram/deploy/uninstall.sh --install-dir /opt/familygram --yes
+```
+
+### Manual cleanup (not done by the script)
+
+If you used the installer’s port-forward / NPM checklist, also remove:
+
+| Item | Where |
+|------|--------|
+| Web reverse proxy | Nginx Proxy Manager — delete proxy host for `WEB_DOMAIN` (e.g. `web.example.com` → `:8082`) |
+| Passkey HTTPS proxy | NPM host for passkey domain → `:30443` (if passkey was enabled) |
+| UFW rules | `sudo ufw status numbered` — delete FamilyGram MTProto, TURN, and web port rules |
+| Legacy host nginx | `/etc/nginx/sites-enabled/familygram-web` if you used manual web deploy before Docker web |
+| DNS | Cloudflare/registrar A records for web and passkey hostnames |
+| Router | Port forwards for MTProto (`20443`–`20646`), STUN/TURN, optional RTMP |
+
+Docker itself, Node.js (nvm), and system packages installed by the wizard are left in place so other workloads on the VM are unaffected.
 
 ## Networking and ports
 
@@ -242,7 +330,9 @@ docker compose logs -f familygram-web
 
 ```
 familygram/
-├── deploy/           # Interactive installer
+├── deploy/
+│   ├── install.sh    # Interactive installer
+│   └── uninstall.sh  # Remove stack (see Uninstall above)
 ├── docker/compose/   # docker-compose.yml, init scripts, .env templates
 └── web/              # FamilyGram Web source + Dockerfile
 ```
@@ -283,90 +373,6 @@ Regenerate packs from [translations.telegram.org](https://translations.telegram.
 ```bash
 bash deploy/fetch-langpacks.sh
 ```
-
-## Uninstall
-
-[`deploy/uninstall.sh`](deploy/uninstall.sh) removes the FamilyGram Docker stack installed by [`deploy/install.sh`](deploy/install.sh). Run it on the host where the stack runs (default install path: `/opt/familygram`).
-
-### What the script does
-
-1. Stops all compose services (including `web` and `bot` profiles when they were enabled at install)
-2. By default, deletes `docker/compose/data/` (MongoDB, uploads, logs, bot DB, etc.) and `.env`
-3. By default, removes the entire `/opt/familygram` directory
-4. Prints a reminder for external cleanup (NPM, firewall, DNS)
-
-GHCR server images pulled from GitHub are **not** removed unless you pass `--remove-images` (that flag only drops the locally built `familygram/familygram-web:local` image).
-
-### Quick start
-
-```bash
-# Interactive (prompts before destructive steps)
-sudo bash /opt/familygram/deploy/uninstall.sh
-
-# Non-interactive full removal
-sudo bash /opt/familygram/deploy/uninstall.sh --yes
-```
-
-From a fresh clone (before install dir is removed):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/CyberoniOntoni/familygram/main/deploy/uninstall.sh -o uninstall.sh
-sudo bash uninstall.sh --install-dir /opt/familygram --yes
-```
-
-### Options
-
-| Flag | Effect |
-|------|--------|
-| `--install-dir PATH` | Install root (default `/opt/familygram`) |
-| `--yes`, `-y` | Skip confirmation prompt |
-| `--keep-data` | Keep `docker/compose/data/` and `.env` |
-| `--keep-repo` | Keep the git clone; only stop containers and remove data (unless `--keep-data`) |
-| `--remove-images` | Remove `familygram/familygram-web:local` after shutdown |
-| `--help` | Show usage |
-
-### Common scenarios
-
-**Full wipe** (reinstall from scratch later):
-
-```bash
-sudo bash /opt/familygram/deploy/uninstall.sh --yes
-```
-
-**Stop containers but keep database and secrets** (same machine, reconfigure):
-
-```bash
-sudo bash /opt/familygram/deploy/uninstall.sh --keep-data --keep-repo --yes
-cd /opt/familygram/docker/compose
-COMPOSE_PROFILES=web,bot docker compose up -d
-```
-
-**Remove stack but keep the repo** for manual inspection or `git pull` before reinstall:
-
-```bash
-sudo bash /opt/familygram/deploy/uninstall.sh --keep-repo --yes
-```
-
-**Custom install directory:**
-
-```bash
-sudo bash /path/to/familygram/deploy/uninstall.sh --install-dir /opt/familygram --yes
-```
-
-### Manual cleanup (not done by the script)
-
-If you used the installer’s port-forward / NPM checklist, also remove:
-
-| Item | Where |
-|------|--------|
-| Web reverse proxy | Nginx Proxy Manager — delete proxy host for `WEB_DOMAIN` (e.g. `web.example.com` → `:8082`) |
-| Passkey HTTPS proxy | NPM host for passkey domain → `:30443` (if passkey was enabled) |
-| UFW rules | `sudo ufw status numbered` — delete FamilyGram MTProto, TURN, and web port rules |
-| Legacy host nginx | `/etc/nginx/sites-enabled/familygram-web` if you used manual web deploy before Docker web |
-| DNS | Cloudflare/registrar A records for web and passkey hostnames |
-| Router | Port forwards for MTProto (`20443`–`20646`), STUN/TURN, optional RTMP |
-
-Docker itself, Node.js (nvm), and system packages installed by the wizard are left in place so other workloads on the VM are unaffected.
 
 ## Web client details
 
