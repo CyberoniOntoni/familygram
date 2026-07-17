@@ -632,7 +632,13 @@ write_env_file() {
   set_env PORT_RELAY_MIN "$PORT_RELAY_MIN"
   set_env PORT_RELAY_MAX "$PORT_RELAY_MAX"
 
-  set_env COTURN_EXTERNAL_IP "$PUBLIC_IP"
+  # Coturn needs PUBLIC/PRIVATE when the host is behind NAT so relay candidates
+  # advertise the correct addresses for LAN + remote (cellular) peers.
+  if [[ -n "${LAN_IP:-}" && "${LAN_IP}" != "${PUBLIC_IP}" ]]; then
+    set_env COTURN_EXTERNAL_IP "${PUBLIC_IP}/${LAN_IP}"
+  else
+    set_env COTURN_EXTERNAL_IP "$PUBLIC_IP"
+  fi
   set_env TELEGRAM_API_ID "$TELEGRAM_API_ID"
   set_env TELEGRAM_API_HASH "$TELEGRAM_API_HASH"
   set_env WEB_HOST_PORT "$WEB_HOST_PORT"

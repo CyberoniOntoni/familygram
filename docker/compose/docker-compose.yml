@@ -117,6 +117,9 @@ services:
       - "${PORT_RELAY_MIN:-49152}-${PORT_RELAY_MAX:-49172}:${PORT_RELAY_MIN:-49152}-${PORT_RELAY_MAX:-49172}/udp"
     volumes:
       - ./data/coturn:/var/lib/coturn
+    # Default coturn denies RFC1918/CGNAT peer IPs (403 Forbidden IP), which breaks
+    # mixed cellular+LAN WebRTC. allowed-peer-ip overrides those denials for self-host.
+    # COTURN_EXTERNAL_IP should be PUBLIC or PUBLIC/PRIVATE when the host is behind NAT.
     command: >
       --verbose
       --listening-ip=0.0.0.0
@@ -131,6 +134,12 @@ services:
       --lt-cred-mech
       --no-tls
       --no-dtls
+      --no-multicast-peers
+      --no-cli
+      --allowed-peer-ip=10.0.0.0-10.255.255.255
+      --allowed-peer-ip=100.64.0.0-100.127.255.255
+      --allowed-peer-ip=172.16.0.0-172.31.255.255
+      --allowed-peer-ip=192.168.0.0-192.168.255.255
       --user=${App__WebRtcConnections__0__UserName:-testgram}:${App__WebRtcConnections__0__Password:-testgram2024}
       --log-file=stdout
 
