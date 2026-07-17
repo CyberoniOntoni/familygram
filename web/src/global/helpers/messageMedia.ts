@@ -21,6 +21,7 @@ import type {
 import type { ActiveDownloads } from '../../types';
 import { ApiMediaFormat } from '../../api/types';
 
+import { IS_FAMILYGRAM } from '../../config';
 import {
   IS_OPFS_SUPPORTED,
   IS_OPUS_SUPPORTED,
@@ -422,8 +423,11 @@ export function getMediaFormat(
   }
 
   if (isAudio || isVoice) {
-    // Safari versions that support Opus are not working with streaming
-    if (isVoice && (IS_SAFARI || !IS_OPUS_SUPPORTED)) {
+    // Safari versions that support Opus are not working with streaming.
+    // FamilyGram file-server stores media encrypted at rest; range/progressive
+    // reads often yield undecodable Opus and voice messages appear silent.
+    // Download the full blob instead so GetFile can decrypt as one unit.
+    if (isVoice && (IS_FAMILYGRAM || IS_SAFARI || !IS_OPUS_SUPPORTED)) {
       return ApiMediaFormat.BlobUrl;
     }
 
