@@ -389,28 +389,19 @@ services:
         condition: service_healthy
 
   ### 3.Session server
-  # Not built by this fork's CI (no source/Dockerfile in this repo) - pulled from
-  # the upstream MyTelegram registry.
+  # Default: closed upstream image (stable). Open FamilyGram MVP:
+  #   SessionServerImage=ghcr.io/cyberoniontoni/familygram-server/mytelegram-session-server:layer228
   session-server:
-    image: ${MyTelegramRegistry}/mytelegram-session-server:${MyTelegramVersion}
+    image: ${SessionServerImage:-${MyTelegramRegistry}/mytelegram-session-server:${MyTelegramVersion}}
     restart: always
     networks:
       - tg-net
     environment:
       Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default}
       ConnectionStrings__Default: ${ConnectionStrings__Default}
-      # App__ThisDcId: ${App__ThisDcId}
-      # App__MediaOnly: ${App__MediaOnly}
       App__DatabaseName: ${App__DatabaseName}
       App__ReadModelDatabaseName: ${App__ReadModelDatabaseName}
       App__AccessHashSecretKey: ${App__AccessHashSecretKey}
-      # App__IdGeneratorGrpcServiceUrl: ${App__IdGeneratorGrpcServiceUrl}
-      # App__MessengerServerGrpcServiceUrl: ${App__MessengerServerGrpcServiceUrl}
-      # App__DispatchUnknownObjectToMessengerServer: ${App__DispatchUnknownObjectToMessengerServer}
-      # App__TempAuthKeyExpirationMinutes: ${App__TempAuthKeyExpirationMinutes}
-      # App__CommandServerObjectIds: ${App__CommandServerObjectIds}
-      # Route RTMP/group-call stream RPCs arriving on media auth keys through the
-      # sticker/media lane; query-server converts them back to messenger queries.
       App__StickerServerObjectIds__0: "447879488" # phone.getGroupCallStreamChannels
       App__StickerServerObjectIds__1: "1525991226" # phone.getGroupCallStreamRtmpUrl
       App__StickerServerObjectIds__2: "3193124286" # upload.getFile inputGroupCallStream
@@ -418,7 +409,7 @@ services:
       RabbitMQ__Connections__Default__Port: ${RabbitMQ__Connections__Default__Port:-5672}
       RabbitMQ__Connections__Default__UserName: ${RabbitMQ__Connections__Default__UserName:-test}
       RabbitMQ__Connections__Default__Password: ${RabbitMQ__Connections__Default__Password}
-      #RabbitMQ__EventBus__ClientName: ${RabbitMQ__EventBus__ClientName}
+      RabbitMQ__EventBus__ClientName: MyTelegramSessionServer
       RabbitMQ__EventBus__ExchangeName: ${RabbitMQ__EventBus__ExchangeName}
       Redis__Configuration: ${Redis__Configuration}
     volumes:
