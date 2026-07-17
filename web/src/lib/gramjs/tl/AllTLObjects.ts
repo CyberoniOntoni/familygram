@@ -12,8 +12,9 @@ for (const tl of Object.values(Api)) {
     }
 }
 
-// FamilyGram-Server LayerLatest is 228 with dual-registration of layer-224 IDs.
-// Override with TG_GRAMJS_LAYER only for experimental builds.
-export const LAYER = Number(import.meta.env.TG_GRAMJS_LAYER || 228);
+// Must stay 224 while FamilyGram uses upstream mytelegram/session-server (layer-224 schema only).
+// Layer 228 wire IDs break sendMessage (0xfef48f62) at session-server deserialize.
+// Override with TG_GRAMJS_LAYER only when a 228-capable session-server is deployed.
+export const LAYER = Number(import.meta.env.TG_GRAMJS_LAYER || 224);
 
 export { tlobjects };

@@ -1,35 +1,84 @@
 /**
- * FamilyGram TL interop: alias legacy constructor IDs the server may still emit
- * (persisted blobs / dual-layer), and ensure critical layer-228 IDs resolve.
+ * FamilyGram TL interop for self-hosted stack.
  *
- * Primary fix for login: server Latest serializes user#b1b8cc83; web scheme must
- * register that ID (see apiTl.ts). Aliases below are defense-in-depth.
+ * Upstream mytelegram/session-server only understands layer-224 constructors.
+ * Force critical request IDs to 224 and alias 228 response IDs if any leak through.
  */
 import { Api as GramJs } from '../lib/gramjs';
 import { tlobjects } from '../lib/gramjs/tl/AllTLObjects';
+import { writeUint32LE } from './encoding/buffer';
 import { IS_FAMILYGRAM } from '../config';
+
+const LAYER_224_SEND_MESSAGE_ID = 0x545cd15a;
+const LAYER_224_EDIT_MESSAGE_ID = 0x51e842e1;
+const LAYER_224_SAVE_DRAFT_ID = 0x54ae308e;
+const LAYER_224_USER_ID = 0x31774388;
+const LAYER_224_CHANNEL_ID = 0x1c32b11c;
+const LAYER_224_MESSAGE_ID = 0x3ae56482;
+
+// Layer 228 IDs (for aliases when reading mixed traffic)
+const LAYER_228_USER_ID = 0xb1b8cc83;
+const LAYER_228_CHANNEL_ID = 0xd49f34c6;
+const LAYER_228_MESSAGE_ID = 0x7600b9d3;
 
 function aliasConstructorId(
   cls: { CONSTRUCTOR_ID: number },
   aliasId: number,
 ) {
+  if (!cls) return;
   if (tlobjects[aliasId] === cls) return;
   tlobjects[aliasId] = cls;
+}
+
+function patchRequestConstructorId(
+  cls: { CONSTRUCTOR_ID: number; prototype: { getBytes: () => Uint8Array; CONSTRUCTOR_ID?: number } },
+  layer224Id: number,
+) {
+  if (!cls || cls.CONSTRUCTOR_ID === layer224Id) return;
+
+  const previousId = cls.CONSTRUCTOR_ID;
+  delete tlobjects[previousId];
+  cls.CONSTRUCTOR_ID = layer224Id;
+  cls.prototype.CONSTRUCTOR_ID = layer224Id;
+  tlobjects[layer224Id] = cls;
+
+  const originalGetBytes = cls.prototype.getBytes;
+  cls.prototype.getBytes = function patchedGetBytes(this: Record<string, unknown>) {
+    // Layer 224 sendMessage has no rich_message field.
+    delete this.richMessage;
+
+    const bytes = originalGetBytes.call(this);
+    const patched = new Uint8Array(bytes);
+    writeUint32LE(patched, layer224Id);
+    return patched;
+  };
 }
 
 export function applyFamilyGramTlCompat(): void {
   if (!IS_FAMILYGRAM) return;
 
-  // Layer-224 constructor IDs → current classes (bit-compatible or legacy blobs)
-  aliasConstructorId(GramJs.User, 0x31774388);
-  aliasConstructorId(GramJs.Channel, 0x1c32b11c);
-  aliasConstructorId(GramJs.BotCommand, 0xc27ac8c7);
+  // Outbound requests must use 224 IDs so session-server can deserialize msg_container.
+  patchRequestConstructorId(GramJs.messages.SendMessage, LAYER_224_SEND_MESSAGE_ID);
+  patchRequestConstructorId(GramJs.messages.EditMessage, LAYER_224_EDIT_MESSAGE_ID);
+  patchRequestConstructorId(GramJs.messages.SaveDraft, LAYER_224_SAVE_DRAFT_ID);
 
-  // Ensure layer-228 primary IDs are registered (in case of stale bundles)
-  if (GramJs.User?.CONSTRUCTOR_ID) {
-    tlobjects[GramJs.User.CONSTRUCTOR_ID] = GramJs.User;
+  // Prefer 224 constructors for types session-server re-serializes.
+  if (GramJs.User) {
+    GramJs.User.CONSTRUCTOR_ID = LAYER_224_USER_ID;
+    GramJs.User.prototype.CONSTRUCTOR_ID = LAYER_224_USER_ID;
+    tlobjects[LAYER_224_USER_ID] = GramJs.User;
+    aliasConstructorId(GramJs.User, LAYER_228_USER_ID);
   }
-  if (GramJs.Channel?.CONSTRUCTOR_ID) {
-    tlobjects[GramJs.Channel.CONSTRUCTOR_ID] = GramJs.Channel;
+  if (GramJs.Channel) {
+    GramJs.Channel.CONSTRUCTOR_ID = LAYER_224_CHANNEL_ID;
+    GramJs.Channel.prototype.CONSTRUCTOR_ID = LAYER_224_CHANNEL_ID;
+    tlobjects[LAYER_224_CHANNEL_ID] = GramJs.Channel;
+    aliasConstructorId(GramJs.Channel, LAYER_228_CHANNEL_ID);
+  }
+  if (GramJs.Message) {
+    GramJs.Message.CONSTRUCTOR_ID = LAYER_224_MESSAGE_ID;
+    GramJs.Message.prototype.CONSTRUCTOR_ID = LAYER_224_MESSAGE_ID;
+    tlobjects[LAYER_224_MESSAGE_ID] = GramJs.Message;
+    aliasConstructorId(GramJs.Message, LAYER_228_MESSAGE_ID);
   }
 }
