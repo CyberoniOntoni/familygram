@@ -362,9 +362,17 @@ Server binaries are pulled from [CyberoniOntoni/FamilyGram-Server](https://githu
 
 | Platform | Repository |
 |----------|------------|
-| Server source | [CyberoniOntoni/FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) |
+| Server source | [CyberoniOntoni/FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) (`layer228`) |
 | Web source (standalone) | [CyberoniOntoni/familygram-web](https://github.com/CyberoniOntoni/familygram-web) |
 | Desktop | [CyberoniOntoni/familygram-desktop](https://github.com/CyberoniOntoni/familygram-desktop) |
+| Android | [CyberoniOntoni/testgram-android](https://github.com/CyberoniOntoni/testgram-android) (`layer228`) |
+| iOS | [CyberoniOntoni/mytelegram-iOS](https://github.com/CyberoniOntoni/mytelegram-iOS) (`layer228`) |
+| WebK | [CyberoniOntoni/mytelegram-webk](https://github.com/CyberoniOntoni/mytelegram-webk) (`layer228`) |
+| TDLib | [CyberoniOntoni/mytelegram-td](https://github.com/CyberoniOntoni/mytelegram-td) (`layer228`) |
+| Bot API | [CyberoniOntoni/mytelegram-bot-api](https://github.com/CyberoniOntoni/mytelegram-bot-api) (`layer228`) |
+| opengram (session-server research) | [CyberoniOntoni/opengram](https://github.com/CyberoniOntoni/opengram) (`layer228`) |
+
+**Closed upstream images (not forkable):** `mytelegram/mytelegram-session-server`, `mytelegram/mytelegram-file-server`. Wire layer stays **224** until a FamilyGram-owned session-server exists — see FamilyGram-Server [docs/UPSTREAM_FORKS.md](https://github.com/CyberoniOntoni/FamilyGram-Server/blob/layer228/docs/UPSTREAM_FORKS.md).
 
 ## Language packs (English / Russian)
 
