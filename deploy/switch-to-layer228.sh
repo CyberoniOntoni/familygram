@@ -57,14 +57,23 @@ if grep -q '^TestgramRegistry=' .env; then
   sed -i 's|^TestgramRegistry=.*|TestgramRegistry=ghcr.io/cyberoniontoni/familygram-server|' .env
 fi
 
+# Detect compose profiles from .env (do not force bot when using fixed login code).
 PROFILES=()
-grep -qE '^ENABLE_WEB=|^WEB_DOMAIN=.' .env 2>/dev/null && PROFILES+=(web)
-# bot profile when BOT_TOKEN set
-if grep -qE '^BOT_TOKEN=.+' .env && ! grep -qE '^BOT_TOKEN=\s*$' .env; then
+if grep -qE '^WEB_DOMAIN=.+' .env 2>/dev/null || [[ "${ENABLE_WEB:-yes}" == "yes" ]]; then
+  PROFILES+=(web)
+fi
+if grep -qE '^BOT_TOKEN=[0-9]+:.+' .env 2>/dev/null; then
   PROFILES+=(bot)
 fi
-# Prefer compose profiles from running containers / common default
-export COMPOSE_PROFILES="${COMPOSE_PROFILES:-web,bot}"
+if [[ ${#PROFILES[@]} -eq 0 ]]; then
+  COMPOSE_PROFILES="${COMPOSE_PROFILES:-}"
+else
+  # Join with commas; honor explicit COMPOSE_PROFILES override if already set.
+  joined="$(IFS=,; echo "${PROFILES[*]}")"
+  export COMPOSE_PROFILES="${COMPOSE_PROFILES:-${joined}}"
+fi
+log_profiles="${COMPOSE_PROFILES:-none}"
+echo "==> Compose profiles: ${log_profiles}"
 
 echo "==> Pull server images (tag layer228)"
 docker compose pull --ignore-buildable
