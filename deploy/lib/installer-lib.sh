@@ -681,8 +681,13 @@ prepare_data_dirs() {
   log "Preparing data directories..."
   mkdir -p data/mytelegram data/bot geoip data/redis data/rabbitmq \
     data/mongo/db data/mongo/configdb data/minio data/coturn data/rtmp \
-    data/mytelegram/data-seeder/downloads/langpacks
+    data/mytelegram/data-seeder/downloads/langpacks \
+    data/mytelegram/file/uploads
   chmod -R a+w data
+  # file-server container runs as uid 1654; root-owned 0755 uploads causes
+  # UnauthorizedAccessException and breaks photos / voice messages.
+  chown -R 1654:1654 data/mytelegram/file 2>/dev/null || chmod -R a+rwX data/mytelegram/file
+
 
   local langpack_src="${COMPOSE_DIR}/langpacks"
   local langpack_dst="${COMPOSE_DIR}/data/mytelegram/data-seeder/downloads/langpacks"
