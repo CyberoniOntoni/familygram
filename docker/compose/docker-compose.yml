@@ -106,15 +106,12 @@ services:
         condition: service_healthy
 
   ### Coturn (STUN/TURN server for WebRTC calls)
+  # Host networking: Docker bridge + docker-proxy mangles UDP enough to break video
+  # (audio may still work at ~100kbps). Coturn must bind host ports directly.
   coturn:
     image: coturn/coturn:latest
     restart: always
-    networks:
-      - tg-net
-    ports:
-      - "${PORT_STUN:-5348}:${PORT_STUN:-5348}"
-      - "${PORT_STUN:-5348}:${PORT_STUN:-5348}/udp"
-      - "${PORT_RELAY_MIN:-49152}-${PORT_RELAY_MAX:-49172}:${PORT_RELAY_MIN:-49152}-${PORT_RELAY_MAX:-49172}/udp"
+    network_mode: host
     volumes:
       - ./data/coturn:/var/lib/coturn
     # Default coturn denies RFC1918/CGNAT peer IPs (403 Forbidden IP), which breaks

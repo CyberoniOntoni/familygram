@@ -646,9 +646,12 @@ function buildIceServers(connections: ApiPhoneCallConnection[], isP2p: boolean) 
   connections.forEach((connection) => {
     const urls: string[] = [];
     if (connection.isTurn) {
-      urls.push(buildIceServerUrl('turn', connection.ip, connection.port));
+      // Prefer explicit transports: UDP for media, TCP as fallback when UDP is blocked.
+      urls.push(buildIceServerUrl('turn', connection.ip, connection.port, 'udp'));
+      urls.push(buildIceServerUrl('turn', connection.ip, connection.port, 'tcp'));
       if (connection.ipv6) {
-        urls.push(buildIceServerUrl('turn', connection.ipv6, connection.port));
+        urls.push(buildIceServerUrl('turn', connection.ipv6, connection.port, 'udp'));
+        urls.push(buildIceServerUrl('turn', connection.ipv6, connection.port, 'tcp'));
       }
     }
     if (isP2p && connection.isStun) {
@@ -672,9 +675,15 @@ function buildIceServers(connections: ApiPhoneCallConnection[], isP2p: boolean) 
   return servers;
 }
 
-function buildIceServerUrl(protocol: 'stun' | 'turn', host: string, port: number) {
+function buildIceServerUrl(
+  protocol: 'stun' | 'turn',
+  host: string,
+  port: number,
+  transport?: 'udp' | 'tcp',
+) {
   const formattedHost = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
-  return `${protocol}:${formattedHost}:${port}`;
+  const base = `${protocol}:${formattedHost}:${port}`;
+  return transport ? `${base}?transport=${transport}` : base;
 }
 
 function stopStream(stream?: MediaStream, except?: MediaStream) {
