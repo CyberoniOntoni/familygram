@@ -1,6 +1,8 @@
 /**
- * Testgram negotiates MTProto layer 224 while telegram-tt ships layer 227 TL schema.
- * Patch known constructor ID mismatches so the session server can deserialize requests.
+ * FamilyGram-Server production layer is 224. Web gramjs ships a newer TL packaging
+ * (≈227–228 constructors). Patch known mismatches so requests/responses interop.
+ * Remove patches only after server LayerLatest is 228 with dual-ID registration
+ * (FamilyGram-Server docs/LAYER_228_UPGRADE.md).
  */
 import { Api as GramJs } from '../lib/gramjs';
 import { tlobjects } from '../lib/gramjs/tl/AllTLObjects';
