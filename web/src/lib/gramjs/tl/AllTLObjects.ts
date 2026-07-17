@@ -12,10 +12,8 @@ for (const tl of Object.values(Api)) {
     }
 }
 
-// FamilyGram-Server production is layer 224. Web TL packaging is closer to 227–228;
-// familygramTlCompat patches known 224 mismatches. Do not set 228 until the server
-// dual-registers 228 constructors (docs/LAYER_228_UPGRADE.md on FamilyGram-Server).
+// FamilyGram-Server LayerLatest is 228 with dual-registration of layer-224 IDs.
 // Override with TG_GRAMJS_LAYER only for experimental builds.
-export const LAYER = Number(import.meta.env.TG_GRAMJS_LAYER || 224);
+export const LAYER = Number(import.meta.env.TG_GRAMJS_LAYER || 228);
 
 export { tlobjects };
