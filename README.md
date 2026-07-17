@@ -92,6 +92,25 @@ FIXED_VERIFY_CODE=12345 \
 sudo bash install.sh --non-interactive --start
 ```
 
+### Bleeding-edge (layer 228)
+
+Deploys the `layer228` web client and pulls matching FamilyGram-Server images tagged `layer228` from GHCR (not production `:latest`).
+
+```bash
+# Fresh install
+curl -fsSL https://raw.githubusercontent.com/CyberoniOntoni/familygram/layer228/deploy/install.sh -o install.sh
+PUBLIC_IP=… LAN_IP=… WEB_DOMAIN=… TELEGRAM_API_ID=… TELEGRAM_API_HASH=… FIXED_VERIFY_CODE=12345 \
+  REPO_BRANCH=layer228 \
+  sudo bash install.sh --non-interactive --start
+
+# Or from an existing clone
+cd /opt/familygram
+sudo REPO_BRANCH=layer228 bash deploy/install.sh --non-interactive --start \
+  --public-ip … --lan-ip … --web-domain … --api-id … --api-hash … --fixed-verify-code 12345
+```
+
+Requires [FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) CI to have published `ghcr.io/cyberoniontoni/familygram-server/*:layer228`. Override with `FamilyGramServerVersion=…` if needed.
+
 ## Uninstall
 
 [`deploy/uninstall.sh`](deploy/uninstall.sh) removes the FamilyGram Docker stack installed by [`deploy/install.sh`](deploy/install.sh). Run it on the host where the stack runs (default install path: `/opt/familygram`).
