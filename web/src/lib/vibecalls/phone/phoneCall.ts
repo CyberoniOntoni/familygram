@@ -158,7 +158,9 @@ function getUserStream(streamType: StreamType, facing: VideoFacingModeEnum = 'us
     });
   }
 
-  const audio = streamType === 'audio' ? {
+  const audio = streamType === 'audio' || streamType === 'video' ? {
+    // Include audio when enabling video so mobile browsers do not stop the
+    // existing mic track (a second video-only getUserMedia often kills audio).
     echoCancellation: IS_ECHO_CANCELLATION_SUPPORTED ? true : undefined,
     noiseSuppression: IS_NOISE_SUPPRESSION_SUPPORTED ? true : undefined,
   } : false;
@@ -170,8 +172,12 @@ function getUserStream(streamType: StreamType, facing: VideoFacingModeEnum = 'us
   return navigator.mediaDevices.getUserMedia({ audio, video });
 }
 
-function getStreamTrack(stream: MediaStream | undefined) {
-  return stream?.getTracks()[0];
+function getStreamTrack(stream: MediaStream | undefined, kind?: 'audio' | 'video') {
+  if (!stream) return undefined;
+  if (kind) {
+    return stream.getTracks().find((track) => track.kind === kind);
+  }
+  return stream.getTracks()[0];
 }
 
 function hasLiveTrack(stream: MediaStream | undefined) {
@@ -253,7 +259,7 @@ export async function switchCameraInputP2p() {
   let newStream: MediaStream | undefined;
   try {
     newStream = await getUserStream('video', nextFacingMode);
-    const newTrack = getStreamTrack(newStream);
+    const newTrack = getStreamTrack(newStream, 'video');
     if (!newTrack) {
       stopStream(newStream);
       return;
@@ -262,7 +268,11 @@ export async function switchCameraInputP2p() {
     const oldStream = state.streams.ownVideo;
     await sender.replaceTrack(newTrack);
     state.facingMode = nextFacingMode;
-    state.streams.ownVideo = newStream;
+    state.streams.ownVideo = new MediaStream([newTrack]);
+    // Discard the temporary dual stream except the video track we keep.
+    newStream.getTracks().forEach((t) => {
+      if (t !== newTrack) t.stop();
+    });
     stopStream(oldStream, state.blackVideo);
     updateStreams();
     sendLocalMediaState();
@@ -297,7 +307,8 @@ export async function toggleStreamP2p(streamType: StreamType, value: boolean | u
     if (shouldEnable && !track.enabled) {
       const facingMode = streamType === 'video' ? state.facingMode || 'user' : undefined;
       const newStream = await getUserStream(streamType, facingMode);
-      const newTrack = getStreamTrack(newStream);
+      const trackKind = streamType === 'audio' ? 'audio' : 'video';
+      const newTrack = getStreamTrack(newStream, trackKind);
       if (!newTrack) {
         stopStream(newStream);
         return;
@@ -312,20 +323,39 @@ export async function toggleStreamP2p(streamType: StreamType, value: boolean | u
         const shouldCreateVideoTransceiver = streamType !== 'audio'
           && (!sender || !transceiver || transceiver.currentDirection === 'stopped');
         if (shouldCreateVideoTransceiver) {
+          // Prefer a dedicated MediaStream for the video track only.
+          const videoOnlyStream = new MediaStream([newTrack]);
           transceiver = state.connection.addTransceiver(newTrack, {
             direction: 'sendrecv',
-            streams: [newStream],
+            streams: [videoOnlyStream],
           });
           setLocalVideoTransceiver(streamType, transceiver);
           shouldRenegotiate = true;
+          setOwnStream(streamType, videoOnlyStream);
         } else {
           await sender!.replaceTrack(newTrack);
+          setOwnStream(streamType, new MediaStream([newTrack]));
         }
         if (transceiver && streamType !== 'audio') {
           shouldRenegotiate ||= !transceiver.mid || transceiver.currentDirection === 'inactive';
           transceiver.direction = 'sendrecv';
         }
-        setOwnStream(streamType, newStream);
+
+        // If video capture also opened a mic track, re-bind audio so mobile
+        // browsers that stopped the previous mic keep working.
+        if (streamType === 'video') {
+          const freshAudio = getStreamTrack(newStream, 'audio');
+          const audioSender = getSender('audio');
+          if (freshAudio && audioSender) {
+            freshAudio.enabled = true;
+            await audioSender.replaceTrack(freshAudio);
+            setOwnStream('audio', new MediaStream([freshAudio]));
+          }
+          // Drop unused tracks from the temporary dual stream.
+          newStream.getTracks().forEach((t) => {
+            if (t !== newTrack && t !== freshAudio) t.stop();
+          });
+        }
       } catch (err) {
         stopStream(newStream);
         throw err;
