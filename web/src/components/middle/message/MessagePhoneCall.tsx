@@ -11,6 +11,7 @@ import { formatTime, formatTimeDuration } from '../../../util/dates/oldDateForma
 import { getCallMessageKey } from './helpers/messageActions';
 
 import useLastCallback from '../../../hooks/useLastCallback';
+import useLang from '../../../hooks/useLang';
 import useOldLang from '../../../hooks/useOldLang';
 
 import Icon from '../../common/icons/Icon';
@@ -31,7 +32,10 @@ const MessagePhoneCall: FC<OwnProps> = ({
 }) => {
   const { requestMasterAndRequestCall } = getActions();
 
-  const lang = useOldLang();
+  // Call history title/duration use WebA keys with {time}/{duration} placeholders.
+  // Duration helpers still take the legacy lang fn for plural units.
+  const lang = useLang();
+  const oldLang = useOldLang();
   const {
     isVideo, reason, duration,
   } = phoneCall;
@@ -45,10 +49,10 @@ const MessagePhoneCall: FC<OwnProps> = ({
   });
 
   const formattedDuration = useMemo(() => {
-    return phoneCall.duration ? formatTimeDuration(lang, phoneCall.duration) : undefined;
-  }, [lang, phoneCall.duration]);
+    return phoneCall.duration ? formatTimeDuration(oldLang, phoneCall.duration) : undefined;
+  }, [oldLang, phoneCall.duration]);
 
-  const timeFormatted = formatTime(lang, message.date * 1000);
+  const timeFormatted = formatTime(oldLang, message.date * 1000);
   return (
     <div className={styles.root}>
       <Button
@@ -75,7 +79,9 @@ const MessagePhoneCall: FC<OwnProps> = ({
             )}
           />
           <span className={styles.duration}>
-            {formattedDuration ? lang('CallMessageWithDuration', [timeFormatted, formattedDuration]) : timeFormatted}
+            {formattedDuration
+              ? lang('CallMessageWithDuration', { time: timeFormatted, duration: formattedDuration })
+              : timeFormatted}
           </span>
         </div>
       </div>

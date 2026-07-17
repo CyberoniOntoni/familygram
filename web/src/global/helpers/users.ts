@@ -103,27 +103,28 @@ export function getUserStatus(
     case 'userStatusOffline': {
       const { wasOnline } = userStatus;
 
-      if (!wasOnline) return lang('LastSeen.Offline');
+      // WebA langpack keys are PascalCase without dots (LastSeenHoursAgo), not iOS-style LastSeen.HoursAgo.
+      if (!wasOnline) return lang('LastSeenOffline');
 
       const serverTimeOffset = getServerTimeOffset();
       const now = new Date(Date.now() + serverTimeOffset * 1000);
       const wasOnlineDate = new Date(wasOnline * 1000);
 
       if (wasOnlineDate >= now) {
-        return lang('LastSeen.JustNow');
+        return lang('LastSeenJustNow');
       }
 
       const diff = new Date(now.getTime() - wasOnlineDate.getTime());
 
       // within a minute
       if (diff.getTime() / 1000 < 60) {
-        return lang('LastSeen.JustNow');
+        return lang('LastSeenJustNow');
       }
 
       // within an hour
       if (diff.getTime() / 1000 < 60 * 60) {
         const minutes = Math.floor(diff.getTime() / 1000 / 60);
-        return lang('LastSeen.MinutesAgo', minutes);
+        return lang('LastSeenMinutesAgo', { count: minutes }, { pluralValue: minutes });
       }
 
       // today
@@ -134,11 +135,11 @@ export function getUserStatus(
         // up to 6 hours ago
         if (diff.getTime() / 1000 < 6 * 60 * 60) {
           const hours = Math.floor(diff.getTime() / 1000 / 60 / 60);
-          return lang('LastSeen.HoursAgo', hours);
+          return lang('LastSeenHoursAgo', { count: hours }, { pluralValue: hours });
         }
 
         // other
-        return lang('LastSeen.TodayAt', formatTime(lang, wasOnlineDate));
+        return lang('LastSeenTodayAt', { time: formatTime(lang, wasOnlineDate) });
       }
 
       // yesterday
@@ -147,10 +148,10 @@ export function getUserStatus(
       yesterday.setHours(0, 0, 0, 0);
       const serverYesterday = new Date(yesterday.getTime() + serverTimeOffset * 1000);
       if (wasOnlineDate > serverYesterday) {
-        return lang('LastSeen.YesterdayAt', formatTime(lang, wasOnlineDate));
+        return lang('LastSeenYesterdayAt', { time: formatTime(lang, wasOnlineDate) });
       }
 
-      return lang('LastSeen.AtDate', formatFullDate(lang, wasOnlineDate));
+      return lang('LastSeenAtDate', { date: formatFullDate(lang, wasOnlineDate) });
     }
 
     case 'userStatusOnline': {

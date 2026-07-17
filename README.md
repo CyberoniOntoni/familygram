@@ -373,7 +373,11 @@ FamilyGram Web loads UI strings from **FamilyGram Server** (`langpack.getLanguag
 - `docker/compose/langpacks/en/android.json` (merged **android ∪ weba** strings)
 - `docker/compose/langpacks/ru/android.json` (same merge)
 
-Android-only packs cover roughly **30%** of WebA UI keys. Packs are built with `bash deploy/fetch-langpacks.sh`, which downloads official Telegram **android** + **weba** exports and merges them (weba wins on conflicts). `LanguagePackDataSeeder` imports into all client platforms (weba, android, tdesktop, …).
+Packs are built with `bash deploy/fetch-langpacks.sh`, which merges official Telegram exports:
+
+`android` + `weba` + `webk` + `ios` + `macos` + `tdesktop` (later sources win on conflicts).
+
+That covers both the new WebA UI (`LastSeenHoursAgo`, …) and the legacy `useOldLang` path (`lng_*` tdesktop keys, dotted iOS keys). `LanguagePackDataSeeder` imports the merged set into all client platforms.
 
 On an existing host (after `git pull`):
 
