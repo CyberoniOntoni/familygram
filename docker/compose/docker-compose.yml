@@ -447,13 +447,11 @@ services:
   #   depends_on:
   #     - mongodb
 
-  ### 4.File server
-  # Not built by this fork's CI (no source/Dockerfile in this repo) - pulled from
-  # the upstream MyTelegram registry.
+  ### 4.File server (FamilyGram open implementation)
+  # Built by FamilyGram-Server CI as ghcr.io/.../mytelegram-file-server.
+  # Override with MyTelegramRegistry to fall back to closed upstream image.
   file-server:
-    image: ${MyTelegramRegistry}/mytelegram-file-server:${MyTelegramVersion}
-    user: "1654"
-    entrypoint: ["/app/MyTelegram.FileServer"]
+    image: ${FileServerImage:-${FamilyGramServerRegistry:-${TestgramRegistry:-ghcr.io/cyberoniontoni/familygram-server}}/mytelegram-file-server:${FamilyGramServerVersion:-${TestgramVersion:-latest}}}
     restart: always
     networks:
       - tg-net
@@ -461,26 +459,26 @@ services:
       - ./data/mytelegram/file/uploads:/app/uploads
       - ./data/mytelegram/file:/app/Logs
     environment:
+      ASPNETCORE_URLS: http://+:8080
       Serilog__MinimumLevel__Default: ${Serilog__MinimumLevel__Default}
       ConnectionStrings__Default: ${ConnectionStrings__Default}
       App__DatabaseName: ${App__DatabaseName}
       App__ReadModelDatabaseName: ${App__ReadModelDatabaseName}
       App__AccessHashSecretKey: ${App__AccessHashSecretKey}
-      # App__ThisDcId: ${App__ThisDcId}
-      # App__MediaDcId: ${App__MediaDcId}
-      # App__UploadRootPath: ${App__UploadRootPath}
-      # Route file-server through the 416-neutralising proxy (see minio-proxy service)
-      # to work around the NullReferenceException bug in its bundled MinIO SDK.
-      Minio__Endpoint: ${Minio__FileServerEndpoint:-minio-proxy:9000}
+      App__ThisDcId: ${App__ThisDcId:-1}
+      App__MediaDcId: ${App__MediaDcId:-1}
+      # Prefer direct MinIO (modern SDK); minio-proxy still ok if set.
+      Minio__Endpoint: ${Minio__FileServerEndpoint:-minio:9000}
       Minio__AccessKey: ${Minio__AccessKey}
       Minio__SecretKey: ${Minio__SecretKey}
       Minio__BucketName: ${Minio__BucketName:-tg-files}
       Minio__CreateBucketIfNotExists: ${Minio__CreateBucketIfNotExists:-True}
+      Minio__UseSsl: "false"
       RabbitMQ__Connections__Default__HostName: ${RabbitMQ__Connections__Default__HostName:-rabbitmq}
       RabbitMQ__Connections__Default__Port: ${RabbitMQ__Connections__Default__Port:-5672}
       RabbitMQ__Connections__Default__UserName: ${RabbitMQ__Connections__Default__UserName:-test}
       RabbitMQ__Connections__Default__Password: ${RabbitMQ__Connections__Default__Password}
-      RabbitMQ__EventBus__ClientName: MyTelegramFileServerRaw
+      RabbitMQ__EventBus__ClientName: MyTelegramFileServerPublisher
       RabbitMQ__EventBus__ExchangeName: ${RabbitMQ__EventBus__ExchangeName}
       Redis__Configuration: ${Redis__Configuration}
     depends_on:
@@ -488,7 +486,7 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-      minio-proxy:
+      minio:
         condition: service_started
 
   ### 5.Messenger command server
