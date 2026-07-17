@@ -277,10 +277,15 @@ export function discardCall({
 }: {
   call: ApiPhoneCall; isBusy?: boolean; isPageUnload?: boolean;
 }) {
+  // Prefer real call length so chat history does not look like a cancelled/declined call.
+  const duration = call.startDate
+    ? Math.max(0, Math.floor(Date.now() / 1000) - call.startDate)
+    : DEFAULT_PRIMITIVES.INT;
+
   const request = new GramJs.phone.DiscardCall({
     peer: buildInputPhoneCall(call),
     reason: isBusy ? new GramJs.PhoneCallDiscardReasonBusy() : new GramJs.PhoneCallDiscardReasonHangup(),
-    duration: DEFAULT_PRIMITIVES.INT,
+    duration,
     connectionId: DEFAULT_PRIMITIVES.BIGINT,
   });
 

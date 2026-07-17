@@ -37,7 +37,8 @@ const MessagePhoneCall: FC<OwnProps> = ({
   } = phoneCall;
   const isOutgoing = message.isOutgoing;
   const isMissed = reason === 'missed';
-  const isCancelled = reason === 'busy' || duration === undefined;
+  const isCancelled = reason === 'busy'
+    || (duration === undefined && reason !== 'hangup' && reason !== 'disconnect');
 
   const handleCall = useLastCallback(() => {
     requestMasterAndRequestCall({ isVideo, userId: chatId });

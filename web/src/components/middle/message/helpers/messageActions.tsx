@@ -150,7 +150,11 @@ export function renderTopicLink(chatId: string, topicId: number, content: TeactN
 
 export function getCallMessageKey(action: ApiMessageActionPhoneCall, isOutgoing: boolean): RegularLangKey {
   const isMissed = action.reason === 'missed';
-  const isCancelled = action.reason === 'busy' || action.duration === undefined;
+  // Only treat as declined/cancelled when busy, or when there is no duration and no
+  // hangup/disconnect reason (incomplete intermediate bubbles). A hangup with duration 0
+  // is still a completed call.
+  const isCancelled = action.reason === 'busy'
+    || (action.duration === undefined && action.reason !== 'hangup' && action.reason !== 'disconnect');
   if (action.isVideo) {
     if (isMissed) return isOutgoing ? 'CallMessageVideoOutgoingMissed' : 'CallMessageVideoIncomingMissed';
     if (isCancelled) return 'CallMessageVideoIncomingDeclined';
