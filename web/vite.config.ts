@@ -60,7 +60,29 @@ type BundleReportHook = (
 type ReportOutputBundle = Record<string, unknown>;
 
 export default defineConfig(({ mode }): UserConfig => {
-  const env = loadEnv(mode, process.cwd(), '');
+  // loadEnv only reads .env* files. Docker compose/Dockerfile ENV lives on process.env —
+  // merge so FAMILYGRAM_SELF_HOSTED=1 enables layer-224 TL compat in production images.
+  const fileEnv = loadEnv(mode, process.cwd(), '');
+  const env = {
+    ...fileEnv,
+    HEAD: process.env.HEAD || fileEnv.HEAD || '',
+    BUNDLE_STATS: process.env.BUNDLE_STATS || fileEnv.BUNDLE_STATS || '',
+    BUNDLE_STATS_BASELINE_PATH: process.env.BUNDLE_STATS_BASELINE_PATH || fileEnv.BUNDLE_STATS_BASELINE_PATH || '',
+    BUNDLE_STATS_VISUALIZER: process.env.BUNDLE_STATS_VISUALIZER || fileEnv.BUNDLE_STATS_VISUALIZER || '',
+    HTTPS_CERT_PATH: process.env.HTTPS_CERT_PATH || fileEnv.HTTPS_CERT_PATH || '',
+    HTTPS_KEY_PATH: process.env.HTTPS_KEY_PATH || fileEnv.HTTPS_KEY_PATH || '',
+    FAMILYGRAM_SELF_HOSTED: process.env.FAMILYGRAM_SELF_HOSTED || fileEnv.FAMILYGRAM_SELF_HOSTED || '',
+    FAMILYGRAM_GATEWAY_URL: process.env.FAMILYGRAM_GATEWAY_URL || fileEnv.FAMILYGRAM_GATEWAY_URL || 'http://127.0.0.1:30444',
+    PRODUCTION_HOSTNAME: process.env.PRODUCTION_HOSTNAME || fileEnv.PRODUCTION_HOSTNAME || '',
+    APP_ENV: process.env.APP_ENV || fileEnv.APP_ENV || '',
+    APP_TITLE: process.env.APP_TITLE || fileEnv.APP_TITLE || '',
+    APP_NAME: process.env.APP_NAME || fileEnv.APP_NAME || '',
+    BASE_URL: process.env.BASE_URL || fileEnv.BASE_URL || '',
+    TELEGRAM_API_ID: process.env.TELEGRAM_API_ID || fileEnv.TELEGRAM_API_ID || '',
+    TELEGRAM_API_HASH: process.env.TELEGRAM_API_HASH || fileEnv.TELEGRAM_API_HASH || '',
+    APP_MOCKED_CLIENT: process.env.APP_MOCKED_CLIENT || fileEnv.APP_MOCKED_CLIENT || '',
+    TEST_SESSION: process.env.TEST_SESSION || fileEnv.TEST_SESSION || '',
+  };
   const {
     HEAD = '',
     BUNDLE_STATS: bundleStatsValue = '',
