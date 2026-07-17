@@ -235,6 +235,14 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
     requestMasterAndRequestCall({ userId: chatId });
   });
 
+  const handleRequestVideoCall = useLastCallback(() => {
+    if (isAccountFrozen) {
+      openFrozenAccountModal();
+      return;
+    }
+    requestMasterAndRequestCall({ userId: chatId, isVideo: true });
+  });
+
   const handleHotkeySearchClick = useLastCallback((e: KeyboardEvent) => {
     if (!canSearch || !IS_APP || e.shiftKey) {
       return;
@@ -448,14 +456,24 @@ const HeaderActions: FC<OwnProps & StateProps> = ({
             />
           )}
           {canCall && (
-            <Button
-              round
-              color="translucent"
-              size="smaller"
-              onClick={handleRequestCall}
-              ariaLabel="Call"
-              iconName="phone"
-            />
+            <>
+              <Button
+                round
+                color="translucent"
+                size="smaller"
+                onClick={handleRequestVideoCall}
+                ariaLabel={oldLang('VideoCall')}
+                iconName="video"
+              />
+              <Button
+                round
+                color="translucent"
+                size="smaller"
+                onClick={handleRequestCall}
+                ariaLabel="Call"
+                iconName="phone"
+              />
+            </>
           )}
         </>
       )}
