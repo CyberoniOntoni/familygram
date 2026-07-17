@@ -167,6 +167,10 @@ function getUserStream(streamType: StreamType, facing: VideoFacingModeEnum = 'us
 
   const video = streamType === 'video' ? {
     facingMode: facing,
+    // Keep bitrate modest so TURN/cellular can carry a usable feed.
+    width: { ideal: 640, max: 960 },
+    height: { ideal: 360, max: 540 },
+    frameRate: { ideal: 15, max: 24 },
   } : false;
 
   return navigator.mediaDevices.getUserMedia({ audio, video });
@@ -339,6 +343,23 @@ export async function toggleStreamP2p(streamType: StreamType, value: boolean | u
         if (transceiver && streamType !== 'audio') {
           shouldRenegotiate ||= !transceiver.mid || transceiver.currentDirection === 'inactive';
           transceiver.direction = 'sendrecv';
+          // Cap video bitrate so cellular+TURN can carry a usable picture.
+          try {
+            const params = transceiver.sender.getParameters();
+            if (!params.encodings?.length) {
+              params.encodings = [{}];
+            }
+            params.encodings.forEach((encoding) => {
+              encoding.maxBitrate = 400_000;
+              encoding.maxFramerate = 20;
+              encoding.scaleResolutionDownBy = encoding.scaleResolutionDownBy || 1;
+            });
+            await transceiver.sender.setParameters(params);
+          } catch (err) {
+            logP2p('set video encoding parameters failed', {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
         }
 
         // If video capture also opened a mic track, re-bind audio so mobile
@@ -580,21 +601,43 @@ export async function joinPhoneCall(
         });
       };
       state.streams.audio = stream;
-    } else if (
-      event.transceiver === state.transceivers.remoteVideo || isRemoteContentTransceiver(event.transceiver, false)
-    ) {
-      state.transceivers.remoteVideo = event.transceiver;
-      state.remoteMediaState.videoState = 'active';
-      state.streams.video = stream;
-    } else if (
-      event.transceiver === state.transceivers.remotePresentation
-      || isRemoteContentTransceiver(event.transceiver, true)
-    ) {
-      state.transceivers.remotePresentation = event.transceiver;
-      state.remoteMediaState.screencastState = 'active';
-      state.streams.presentation = stream;
+    } else if (event.track.kind === 'video') {
+      // Unified Plan often delivers the remote video track on the local sendrecv
+      // video transceiver. Treat any non-local video track as remote media.
+      const ownVideoTrack = getStreamTrack(state.streams.ownVideo, 'video');
+      const ownPresentationTrack = getStreamTrack(state.streams.ownPresentation, 'video');
+      if (event.track === ownVideoTrack || event.track === ownPresentationTrack) {
+        logP2p('ignore local video track ontrack', {
+          mid: event.transceiver.mid,
+        });
+      } else if (
+        event.transceiver === state.transceivers.presentation
+        || event.transceiver === state.transceivers.remotePresentation
+        || isRemoteContentTransceiver(event.transceiver, true)
+      ) {
+        state.transceivers.remotePresentation = event.transceiver;
+        state.remoteMediaState.screencastState = 'active';
+        state.streams.presentation = stream;
+      } else {
+        // Matches remoteVideo, local video sendrecv mid, or unknown video mid.
+        state.transceivers.remoteVideo = event.transceiver;
+        state.remoteMediaState.videoState = 'active';
+        state.streams.video = stream;
+        event.track.onunmute = () => {
+          if (!state) return;
+          state.remoteMediaState.videoState = 'active';
+          state.streams.video = stream;
+          updateStreams();
+        };
+        logP2p('remote video track attached', {
+          mid: event.transceiver.mid,
+          muted: event.track.muted,
+          enabled: event.track.enabled,
+          readyState: event.track.readyState,
+        });
+      }
     } else {
-      logP2p('remote video track ignored: unknown transceiver', {
+      logP2p('remote track ignored: unexpected kind', {
         track: summarizeTrack(event.track),
         mid: event.transceiver.mid,
       });
@@ -676,12 +719,10 @@ function buildIceServers(connections: ApiPhoneCallConnection[], isP2p: boolean) 
   connections.forEach((connection) => {
     const urls: string[] = [];
     if (connection.isTurn) {
-      // Prefer explicit transports: UDP for media, TCP as fallback when UDP is blocked.
+      // UDP only: TCP TURN via public-IP hairpin from home LAN fails and steals ICE.
       urls.push(buildIceServerUrl('turn', connection.ip, connection.port, 'udp'));
-      urls.push(buildIceServerUrl('turn', connection.ip, connection.port, 'tcp'));
       if (connection.ipv6) {
         urls.push(buildIceServerUrl('turn', connection.ipv6, connection.port, 'udp'));
-        urls.push(buildIceServerUrl('turn', connection.ipv6, connection.port, 'tcp'));
       }
     }
     if (isP2p && connection.isStun) {

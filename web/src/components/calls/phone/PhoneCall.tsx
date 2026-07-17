@@ -171,10 +171,14 @@ const PhoneCall = ({
     }
   }, [isBusy, isConnected, isHangingUp, isOutgoing, lang, phoneCall?.state]);
 
-  const hasVideo = phoneCall?.videoState === 'active';
-  const hasPresentation = phoneCall?.screencastState === 'active';
-
   const streams = getStreams();
+  const remoteVideoLive = Boolean(streams?.video?.getTracks?.().some((t) => t.readyState === 'live'));
+  const remotePresentationLive = Boolean(
+    streams?.presentation?.getTracks?.().some((t) => t.readyState === 'live'),
+  );
+  // Prefer live tracks over media-state flags (flags can lag or stay inactive).
+  const hasVideo = phoneCall?.videoState === 'active' || remoteVideoLive;
+  const hasPresentation = phoneCall?.screencastState === 'active' || remotePresentationLive;
   const hasOwnAudio = streams?.ownAudio?.getTracks()?.[0]?.enabled ?? false;
   const hasOwnPresentation = streams?.ownPresentation?.getTracks()?.[0]?.enabled ?? false;
   const hasOwnVideo = streams?.ownVideo?.getTracks()?.[0]?.enabled ?? false;
@@ -256,9 +260,9 @@ const PhoneCall = ({
         size="jumbo"
         className={hasVideo || hasPresentation ? styles.blurred : ''}
       />
-      {phoneCall?.screencastState === 'active' && streams?.presentation
+      {hasPresentation && streams?.presentation
         && <video className={styles.mainVideo} muted autoPlay playsInline srcObject={streams.presentation} />}
-      {phoneCall?.videoState === 'active' && streams?.video
+      {hasVideo && streams?.video
         && <video className={styles.mainVideo} muted autoPlay playsInline srcObject={streams.video} />}
       <video
         className={buildClassName(
