@@ -368,12 +368,12 @@ Server binaries are pulled from [CyberoniOntoni/FamilyGram-Server](https://githu
 
 ## Language packs (English / Russian)
 
-FamilyGram Web loads UI strings from **FamilyGram Server** (`langpack.getLanguages` / `langpack.getLangPack`). The installer copies bundled packs into the data-seeder:
+FamilyGram Web loads UI strings from **FamilyGram Server** (`langpack.getLanguages` / `langpack.getLangPack` with `lang_pack=weba`). The installer copies bundled packs into the data-seeder:
 
-- `docker/compose/langpacks/en/android.json`
-- `docker/compose/langpacks/ru/android.json`
+- `docker/compose/langpacks/en/android.json` (merged **android ∪ weba** strings)
+- `docker/compose/langpacks/ru/android.json` (same merge)
 
-Both are imported on first boot by [FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) `LanguagePackDataSeeder`, so **English** and **Russian** appear in the client language picker.
+Android-only packs cover roughly **30%** of WebA UI keys. Packs are built with `bash deploy/fetch-langpacks.sh`, which downloads official Telegram **android** + **weba** exports and merges them (weba wins on conflicts). `LanguagePackDataSeeder` imports into all client platforms (weba, android, tdesktop, …).
 
 On an existing host (after `git pull`):
 
