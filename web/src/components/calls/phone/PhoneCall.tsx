@@ -177,11 +177,37 @@ const PhoneCall = ({
     streams?.presentation?.getTracks?.().some((t) => t.readyState === 'live'),
   );
   // Prefer live tracks over media-state flags (flags can lag or stay inactive).
+  // Treat muted-but-live remote tracks as present (keyframes arrive on unmute).
   const hasVideo = phoneCall?.videoState === 'active' || remoteVideoLive;
   const hasPresentation = phoneCall?.screencastState === 'active' || remotePresentationLive;
   const hasOwnAudio = streams?.ownAudio?.getTracks()?.[0]?.enabled ?? false;
   const hasOwnPresentation = streams?.ownPresentation?.getTracks()?.[0]?.enabled ?? false;
   const hasOwnVideo = streams?.ownVideo?.getTracks()?.[0]?.enabled ?? false;
+
+  const mainVideoRef = useRef<HTMLVideoElement>();
+  const ownVideoRef = useRef<HTMLVideoElement>();
+  const mainPresentationRef = useRef<HTMLVideoElement>();
+  const ownPresentationRef = useRef<HTMLVideoElement>();
+
+  // Explicitly bind MediaStreams — srcObject prop can race with mount/update.
+  useEffect(() => {
+    const bind = (el: HTMLVideoElement | undefined, stream: MediaStream | undefined) => {
+      if (!el) return;
+      if (el.srcObject !== stream) {
+        el.srcObject = stream || null;
+      }
+      if (stream) {
+        el.play().catch(() => undefined);
+      }
+    };
+    bind(mainVideoRef.current, hasVideo ? streams?.video : undefined);
+    bind(ownVideoRef.current, hasOwnVideo ? streams?.ownVideo : undefined);
+    bind(mainPresentationRef.current, hasPresentation ? streams?.presentation : undefined);
+    bind(ownPresentationRef.current, hasOwnPresentation ? streams?.ownPresentation : undefined);
+  }, [
+    hasVideo, hasOwnVideo, hasPresentation, hasOwnPresentation,
+    streams?.video, streams?.ownVideo, streams?.presentation, streams?.ownPresentation,
+  ]);
 
   const [isHidingPresentation, startHidingPresentation, stopHidingPresentation] = useFlag();
   const [isHidingVideo, startHidingVideo, stopHidingVideo] = useFlag();
@@ -260,11 +286,26 @@ const PhoneCall = ({
         size="jumbo"
         className={hasVideo || hasPresentation ? styles.blurred : ''}
       />
-      {hasPresentation && streams?.presentation
-        && <video className={styles.mainVideo} muted autoPlay playsInline srcObject={streams.presentation} />}
-      {hasVideo && streams?.video
-        && <video className={styles.mainVideo} muted autoPlay playsInline srcObject={streams.video} />}
+      {hasPresentation && streams?.presentation && (
+        <video
+          ref={mainPresentationRef}
+          className={styles.mainVideo}
+          muted
+          autoPlay
+          playsInline
+        />
+      )}
+      {hasVideo && streams?.video && (
+        <video
+          ref={mainVideoRef}
+          className={styles.mainVideo}
+          muted
+          autoPlay
+          playsInline
+        />
+      )}
       <video
+        ref={ownPresentationRef}
         className={buildClassName(
           styles.secondVideo,
           !isHidingPresentation && hasOwnPresentation && styles.visible,
@@ -273,9 +314,9 @@ const PhoneCall = ({
         muted
         autoPlay
         playsInline
-        srcObject={hasOwnPresentation ? streams?.ownPresentation : undefined}
       />
       <video
+        ref={ownVideoRef}
         className={buildClassName(
           styles.secondVideo,
           !isHidingVideo && hasOwnVideo && styles.visible,
@@ -284,7 +325,6 @@ const PhoneCall = ({
         muted
         autoPlay
         playsInline
-        srcObject={hasOwnVideo ? streams?.ownVideo : undefined}
       />
       <div className={styles.header}>
         {IS_REQUEST_FULLSCREEN_SUPPORTED && (

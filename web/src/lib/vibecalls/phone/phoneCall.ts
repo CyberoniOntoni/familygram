@@ -123,6 +123,8 @@ let state: P2pState | undefined;
 let dataChannelSignalingMessagePromise = Promise.resolve();
 
 const ICE_CANDIDATE_POOL_SIZE = 10;
+// Stable mid defaults for custom P2P SDP. Must not collide with each other when
+// transceivers have not been assigned browser mids yet (pre-setLocalDescription).
 const DEFAULT_AUDIO_MID = '0';
 const DEFAULT_VIDEO_MID = '1';
 const DEFAULT_PRESENTATION_MID = '2';
@@ -476,6 +478,18 @@ export async function joinPhoneCall(
     streams: [silentStream],
   });
 
+  // Reserve the video m-line BEFORE the data channel so browser mids stay
+  // audio=0, video=1, data=2 (or similar) instead of data stealing mid 1.
+  // That mid-1 collision made remote video map onto the SCTP section.
+  let videoTransceiver: RTCRtpTransceiver | undefined;
+  const blackVideoTrack = getStreamTrack(blackVideo, 'video');
+  if (shouldStartVideo && blackVideoTrack) {
+    videoTransceiver = conn.addTransceiver(blackVideoTrack, {
+      direction: 'sendrecv',
+      streams: [blackVideo],
+    });
+  }
+
   const dataChannel = isOutgoing ? conn.createDataChannel('data', {
     id: DATA_CHANNEL_ID,
   }) : undefined;
@@ -524,9 +538,11 @@ export async function joinPhoneCall(
     dataChannel,
     transceivers: {
       audio: audioTransceiver,
+      ...(videoTransceiver ? { video: videoTransceiver } : {}),
     },
     senders: {
       audio: audioTransceiver.sender,
+      ...(videoTransceiver ? { video: videoTransceiver.sender } : {}),
     },
     exchangeId: Math.floor(Math.random() * 0xFFFFFFFF),
   };
@@ -675,20 +691,8 @@ export async function joinPhoneCall(
   await toggleStreamP2p('audio', true);
 
   if (shouldStartVideo) {
+    // Camera replaces the pre-reserved black track on the existing transceiver.
     await toggleStreamP2p('video', true);
-    // If camera failed, still reserve a video m-line with the disabled black
-    // track so the peer's video can map onto a shared sendrecv transceiver.
-    if (state && !state.transceivers.video) {
-      const blackTrack = getStreamTrack(state.blackVideo, 'video');
-      if (blackTrack) {
-        const transceiver = state.connection.addTransceiver(blackTrack, {
-          direction: 'sendrecv',
-          streams: [state.blackVideo],
-        });
-        setLocalVideoTransceiver('video', transceiver);
-        logP2p('reserved black video transceiver after camera start failed');
-      }
-    }
   }
 
   if (state) {
@@ -865,11 +869,33 @@ function getMediaMids(): MediaMids {
     ? parseSdpSections(localDescriptionSdp).find((section) => section.kind === 'application')?.mid
     : undefined;
 
+  const assigned = {
+    audio: state.transceivers.audio.mid,
+    video: state.transceivers.video?.mid,
+    presentation: state.transceivers.presentation?.mid,
+    data: localDataMid,
+  };
+
+  // Never reuse an already-taken mid for an unassigned slot (datachannel often
+  // owns mid "1", which used to steal the default video mid).
+  const used = new Set(Object.values(assigned).filter(Boolean) as string[]);
+  const pickDefault = (preferred: string) => {
+    if (!used.has(preferred)) {
+      used.add(preferred);
+      return preferred;
+    }
+    let i = 0;
+    while (used.has(String(i))) i += 1;
+    const mid = String(i);
+    used.add(mid);
+    return mid;
+  };
+
   return {
-    audio: state.transceivers.audio.mid || DEFAULT_AUDIO_MID,
-    video: state.transceivers.video?.mid || DEFAULT_VIDEO_MID,
-    presentation: state.transceivers.presentation?.mid || DEFAULT_PRESENTATION_MID,
-    data: localDataMid || DEFAULT_DATA_MID,
+    audio: assigned.audio || pickDefault(DEFAULT_AUDIO_MID),
+    video: assigned.video || pickDefault(DEFAULT_VIDEO_MID),
+    presentation: assigned.presentation || pickDefault(DEFAULT_PRESENTATION_MID),
+    data: assigned.data || pickDefault(DEFAULT_DATA_MID),
   };
 }
 
@@ -1058,6 +1084,7 @@ async function applyRemoteNegotiation() {
     if (!isAnswer) {
       updateRemoteMediaStateFromOffer(pendingRemoteNegotiation.contents);
       await bindLocalAudioToSharedRemoteOffer();
+      await bindLocalVideoToSharedRemoteOffer();
     }
     await commitPendingIceCandidates();
 
@@ -1254,20 +1281,22 @@ function buildRemoteContentMids(contents: MediaContent[]) {
 
   const [audioContent, mainVideoContent, presentationContent] = orderMediaContents(contents);
   const result: Record<string, string> = {};
+  const mids = getMediaMids();
   if (audioContent) {
-    result[audioContent.ssrc] = state.transceivers.audio.mid
-      ? (state.transceivers.remoteAudio?.mid || audioContent.ssrc) : getMediaMids().audio;
+    // Never fall back to SSRC as mid — browsers expect small numeric mids.
+    result[audioContent.ssrc] = state.transceivers.remoteAudio?.mid
+      || state.transceivers.audio.mid
+      || mids.audio;
   }
   if (mainVideoContent) {
-    // Prefer remote slot, then shared local sendrecv mid (video calls).
     result[mainVideoContent.ssrc] = state.transceivers.remoteVideo?.mid
       || state.transceivers.video?.mid
-      || mainVideoContent.ssrc;
+      || mids.video;
   }
   if (presentationContent) {
     result[presentationContent.ssrc] = state.transceivers.remotePresentation?.mid
       || state.transceivers.presentation?.mid
-      || presentationContent.ssrc;
+      || mids.presentation;
   }
 
   return result;
@@ -1322,6 +1351,76 @@ async function bindLocalAudioToSharedRemoteOffer() {
     track: summarizeTrack(audioTrack),
     transceivers: summarizeTransceivers(),
   });
+}
+
+async function bindLocalVideoToSharedRemoteOffer() {
+  if (!state) {
+    return;
+  }
+
+  const localVideo = state.transceivers.video;
+  const videoTrack = state.senders.video?.track || getStreamTrack(state.streams.ownVideo, 'video');
+  const videoMid = getMediaMids().video;
+
+  // Prefer the transceiver the browser created for the remote offer mid.
+  const offerTransceiver = state.connection.getTransceivers().find((item) => {
+    return item.mid === videoMid && item.receiver.track.kind === 'video';
+  });
+
+  if (offerTransceiver && offerTransceiver !== localVideo) {
+    if (videoTrack) {
+      try {
+        await offerTransceiver.sender.replaceTrack(videoTrack);
+      } catch (err) {
+        logP2p('bind local video replaceTrack failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    try {
+      offerTransceiver.direction = 'sendrecv';
+    } catch {
+      // ignore
+    }
+    state.transceivers.video = offerTransceiver;
+    state.senders.video = offerTransceiver.sender;
+    state.transceivers.remoteVideo = offerTransceiver;
+    logP2p('bound local video to remote offer transceiver', {
+      mid: offerTransceiver.mid,
+      track: summarizeTrack(videoTrack || undefined),
+    });
+    return;
+  }
+
+  // After setRemoteDescription, pull remote track into streams if ontrack lagged.
+  if (localVideo?.receiver?.track && localVideo.receiver.track.readyState === 'live') {
+    const remoteTrack = localVideo.receiver.track;
+    const ownTrack = getStreamTrack(state.streams.ownVideo, 'video');
+    if (remoteTrack !== ownTrack && !remoteTrack.muted) {
+      state.streams.video = new MediaStream([remoteTrack]);
+      state.remoteMediaState.videoState = 'active';
+      state.transceivers.remoteVideo = localVideo;
+      updateStreams();
+      logP2p('attached remote video from local transceiver receiver', {
+        mid: localVideo.mid,
+        muted: remoteTrack.muted,
+      });
+    } else if (remoteTrack !== ownTrack) {
+      state.streams.video = new MediaStream([remoteTrack]);
+      state.remoteMediaState.videoState = 'active';
+      state.transceivers.remoteVideo = localVideo;
+      remoteTrack.onunmute = () => {
+        if (!state) return;
+        state.streams.video = new MediaStream([remoteTrack]);
+        state.remoteMediaState.videoState = 'active';
+        updateStreams();
+      };
+      updateStreams();
+      logP2p('attached muted remote video; waiting for unmute', {
+        mid: localVideo.mid,
+      });
+    }
+  }
 }
 
 function buildRemoteSdp(
@@ -1877,16 +1976,25 @@ function parseMediaContents(sdp: string, mids: MediaMids, activeMedia?: ActiveLo
   const sections = parseSdpSections(sdp);
   const contents: MediaContent[] = [];
   const audioSection = sections.find((section) => section.mid === mids.audio);
-  const videoSection = sections.find((section) => section.mid === mids.video);
-  const presentationSection = sections.find((section) => section.mid === mids.presentation);
+  // Prefer mid match; fall back to first unused video section so we still
+  // negotiate camera when default mids drifted from browser assignment.
+  const videoSection = sections.find((section) => section.mid === mids.video)
+    || sections.find((section) => section.kind === 'video' && section.mid !== mids.presentation);
+  const presentationSection = sections.find((section) => section.mid === mids.presentation)
+    || sections.find((section) => (
+      section.kind === 'video' && section.mid !== videoSection?.mid
+    ));
 
   if (audioSection) {
     contents.push(parseMediaContent(audioSection, 'audio'));
   }
-  if (videoSection && activeMedia?.hasVideo !== false) {
+  // Include video m-line whenever a camera transceiver exists, even if the
+  // track is still the disabled black placeholder (peer still needs the mid).
+  const shouldIncludeVideo = Boolean(state?.transceivers.video) || activeMedia?.hasVideo === true;
+  if (videoSection && shouldIncludeVideo) {
     contents.push(parseMediaContent(videoSection, 'video'));
   }
-  if (presentationSection && activeMedia?.hasPresentation !== false) {
+  if (presentationSection && activeMedia?.hasPresentation === true) {
     contents.push(parseMediaContent(presentationSection, 'video'));
   }
 
