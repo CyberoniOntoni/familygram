@@ -190,14 +190,25 @@ const PhoneCall = ({
   const ownPresentationRef = useRef<HTMLVideoElement>();
 
   // Explicitly bind MediaStreams — srcObject prop can race with mount/update.
+  // Safari needs playsInline + muted + an explicit play() after track unmute.
   useEffect(() => {
     const bind = (el: HTMLVideoElement | undefined, stream: MediaStream | undefined) => {
       if (!el) return;
+      el.setAttribute('playsinline', 'true');
+      el.setAttribute('webkit-playsinline', 'true');
+      el.muted = true;
       if (el.srcObject !== stream) {
         el.srcObject = stream || null;
       }
       if (stream) {
-        el.play().catch(() => undefined);
+        const tryPlay = () => {
+          el.play().catch(() => undefined);
+        };
+        tryPlay();
+        stream.getVideoTracks().forEach((track) => {
+          track.addEventListener('unmute', tryPlay);
+          track.addEventListener('ended', tryPlay);
+        });
       }
     };
     bind(mainVideoRef.current, hasVideo ? streams?.video : undefined);

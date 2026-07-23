@@ -247,15 +247,63 @@ function getUserStream(streamType: StreamType, facing: VideoFacingModeEnum = 'us
     noiseSuppression: IS_NOISE_SUPPRESSION_SUPPORTED ? true : undefined,
   } : false;
 
+  // Soft constraints: Safari/iPad often reject hard facingMode+size combos and
+  // leave us on a disabled black placeholder (peer never receives camera).
   const video = streamType === 'video' ? {
-    facingMode: facing,
-    // Keep bitrate modest so TURN/cellular can carry a usable feed.
-    width: { ideal: 640, max: 960 },
-    height: { ideal: 360, max: 540 },
-    frameRate: { ideal: 15, max: 24 },
+    facingMode: { ideal: facing },
+    width: { ideal: 640 },
+    height: { ideal: 360 },
+    frameRate: { ideal: 24 },
   } : false;
 
-  return navigator.mediaDevices.getUserMedia({ audio, video });
+  return navigator.mediaDevices.getUserMedia({ audio, video }).catch((err) => {
+    // Fallback without facingMode for desktop / strict devices.
+    if (streamType !== 'video') {
+      return Promise.reject(err);
+    }
+    return navigator.mediaDevices.getUserMedia({
+      audio,
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 360 },
+      },
+    });
+  });
+}
+
+/**
+ * Prefer H264 for Safari/iOS interop (VP8 often decodes on Chrome but not on
+ * older WebKit), then VP8. Apply before createOffer/answer when possible.
+ */
+function preferInteroperableVideoCodecs(transceiver: RTCRtpTransceiver | undefined) {
+  if (!transceiver || typeof transceiver.setCodecPreferences !== 'function') {
+    return;
+  }
+  try {
+    const caps = RTCRtpSender.getCapabilities?.('video');
+    if (!caps?.codecs?.length) {
+      return;
+    }
+    const rank = (mime: string) => {
+      const m = mime.toLowerCase();
+      if (m === 'video/h264') return 0;
+      if (m === 'video/vp8') return 1;
+      if (m.includes('rtx') || m.includes('red') || m.includes('ulpfec') || m.includes('flexfec')) {
+        return 3;
+      }
+      return 2;
+    };
+    const ordered = [...caps.codecs].sort((a, b) => rank(a.mimeType) - rank(b.mimeType));
+    transceiver.setCodecPreferences(ordered);
+    logP2p('set video codec preferences', {
+      mid: transceiver.mid,
+      codecs: ordered.slice(0, 6).map((c) => c.mimeType),
+    });
+  } catch (err) {
+    logP2p('set video codec preferences failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 function getStreamTrack(stream: MediaStream | undefined, kind?: 'audio' | 'video') {
@@ -401,6 +449,8 @@ export async function toggleStreamP2p(streamType: StreamType, value: boolean | u
       }
 
       try {
+        // Ensure camera actually sends (black placeholder is created disabled).
+        newTrack.enabled = true;
         newTrack.onended = () => {
           void toggleStreamP2p(streamType, false);
         };
@@ -415,6 +465,7 @@ export async function toggleStreamP2p(streamType: StreamType, value: boolean | u
             direction: 'sendrecv',
             streams: [videoOnlyStream],
           });
+          preferInteroperableVideoCodecs(transceiver);
           setLocalVideoTransceiver(streamType, transceiver);
           shouldRenegotiate = true;
           setOwnStream(streamType, videoOnlyStream);
@@ -425,15 +476,17 @@ export async function toggleStreamP2p(streamType: StreamType, value: boolean | u
         if (transceiver && streamType !== 'audio') {
           shouldRenegotiate ||= !transceiver.mid || transceiver.currentDirection === 'inactive';
           transceiver.direction = 'sendrecv';
+          preferInteroperableVideoCodecs(transceiver);
           // Cap video bitrate so cellular+TURN can carry a usable picture.
+          // Keep enough headroom for H264 keyframes on Safari.
           try {
             const params = transceiver.sender.getParameters();
             if (!params.encodings?.length) {
               params.encodings = [{}];
             }
             params.encodings.forEach((encoding) => {
-              encoding.maxBitrate = 400_000;
-              encoding.maxFramerate = 20;
+              encoding.maxBitrate = 800_000;
+              encoding.maxFramerate = 24;
               encoding.scaleResolutionDownBy = encoding.scaleResolutionDownBy || 1;
             });
             await transceiver.sender.setParameters(params);
@@ -568,6 +621,7 @@ export async function joinPhoneCall(
       direction: 'sendrecv',
       streams: [blackVideo],
     });
+    preferInteroperableVideoCodecs(videoTransceiver);
   }
 
   const dataChannel = isOutgoing ? conn.createDataChannel('data', {
@@ -1895,7 +1949,10 @@ function filterRemoteVideoPayloadTypes(content: MediaContent | undefined) {
   const supportedNames = new Set(supportedCodecs.map((codec) => {
     return codec.mimeType.split('/')[1]?.toUpperCase();
   }).filter(Boolean));
+  // H264 first for Safari/iPad; VP8 second for Chromium desktops.
   const preferredCodec = payloadTypes.find((payloadType) => {
+    return payloadType.name.toUpperCase() === 'H264' && supportedNames.has('H264');
+  }) || payloadTypes.find((payloadType) => {
     return payloadType.name.toUpperCase() === 'VP8' && supportedNames.has('VP8');
   }) || payloadTypes.find((payloadType) => {
     return payloadType.name.toUpperCase() !== 'RTX' && supportedNames.has(payloadType.name.toUpperCase());
