@@ -166,6 +166,9 @@ class TelegramClient {
 
   private _shouldDebugExportedSenders: boolean;
 
+  /** When true (FamilyGram single-DC), never open exported media connections. */
+  private _additionalDcsDisabled: boolean;
+
   _log: Logger;
 
   private floodSleepLimit: number;
@@ -226,6 +229,7 @@ class TelegramClient {
     this._shouldForceHttpTransport = args.shouldForceHttpTransport;
     this._shouldAllowHttpTransport = args.shouldAllowHttpTransport;
     this._shouldDebugExportedSenders = args.shouldDebugExportedSenders;
+    this._additionalDcsDisabled = Boolean(args.additionalDcsDisabled);
     // this._entityCache = new Set()
     if (typeof args.baseLogger === 'string') {
       this._log = new Logger();
@@ -764,9 +768,16 @@ class TelegramClient {
   }
 
   getSender(dcId: number, index?: number, isPremium?: boolean) {
-    return dcId
-      ? this._borrowExportedSender(dcId, undefined, undefined, index, isPremium)
-      : Promise.resolve(this._sender!);
+    // Main-session download path. Exported senders need auth.exportAuthorization
+    // + a second TCP/WSS DC endpoint. FamilyGram is single-DC; `disableExportedSenders`
+    // / `additionalDcsDisabled` were set but never wired, so photo getFile hung on
+    // exported connections that never connected — media never left the client.
+    const mainDcId = this.session.dcId || this.defaultDcId;
+    if (!dcId || dcId === mainDcId || this._additionalDcsDisabled) {
+      return Promise.resolve(this._sender!);
+    }
+
+    return this._borrowExportedSender(dcId, undefined, undefined, index, isPremium);
   }
 
   // end region
