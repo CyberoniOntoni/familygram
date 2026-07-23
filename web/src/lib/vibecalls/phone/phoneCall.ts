@@ -676,6 +676,19 @@ export async function joinPhoneCall(
 
   if (shouldStartVideo) {
     await toggleStreamP2p('video', true);
+    // If camera failed, still reserve a video m-line with the disabled black
+    // track so the peer's video can map onto a shared sendrecv transceiver.
+    if (state && !state.transceivers.video) {
+      const blackTrack = getStreamTrack(state.blackVideo, 'video');
+      if (blackTrack) {
+        const transceiver = state.connection.addTransceiver(blackTrack, {
+          direction: 'sendrecv',
+          streams: [state.blackVideo],
+        });
+        setLocalVideoTransceiver('video', transceiver);
+        logP2p('reserved black video transceiver after camera start failed');
+      }
+    }
   }
 
   if (state) {
@@ -1146,11 +1159,14 @@ function prepareTransceiversForRemoteOffer(contents: MediaContent[]) {
   } else if (hasRemoteAudio && !setRemoteTransceiverDirection('remoteAudio', 'audio', 'recvonly')) {
     state.transceivers.remoteAudio = state.connection.addTransceiver('audio', { direction: 'recvonly' });
   }
-  if (hasRemoteVideo >= 1 && !setRemoteTransceiverDirection('remoteVideo', 'video', 'recvonly')) {
-    state.transceivers.remoteVideo = state.connection.addTransceiver('video', { direction: 'recvonly' });
+  // Video calls start with a local sendrecv camera transceiver on both peers.
+  // Do NOT add a second recvonly video m-line — Unified Plan then fails to map
+  // the remote track (audio still works; video never appears).
+  if (hasRemoteVideo >= 1) {
+    ensureRemoteVideoTransceiver('remoteVideo', 'video');
   }
-  if (hasRemoteVideo >= 2 && !setRemoteTransceiverDirection('remotePresentation', 'video', 'recvonly')) {
-    state.transceivers.remotePresentation = state.connection.addTransceiver('video', { direction: 'recvonly' });
+  if (hasRemoteVideo >= 2) {
+    ensureRemoteVideoTransceiver('remotePresentation', 'presentation');
   }
   if (!hasRemoteAudio || shouldUseSharedAudioSection) {
     setRemoteTransceiverDirection('remoteAudio', 'audio', 'inactive');
@@ -1161,6 +1177,52 @@ function prepareTransceiversForRemoteOffer(contents: MediaContent[]) {
   if (hasRemoteVideo < 2) {
     setRemoteTransceiverDirection('remotePresentation', 'video', 'inactive');
   }
+}
+
+/**
+ * Prefer reusing the local camera/presentation sendrecv transceiver for remote
+ * receive. Only add a dedicated recvonly transceiver when no local video exists
+ * (e.g. voice call receiving mid-call video upgrade from peer).
+ */
+function ensureRemoteVideoTransceiver(
+  remoteSlot: 'remoteVideo' | 'remotePresentation',
+  localSlot: 'video' | 'presentation',
+) {
+  if (!state) {
+    return;
+  }
+
+  if (setRemoteTransceiverDirection(remoteSlot, 'video', 'recvonly')) {
+    return;
+  }
+
+  const local = state.transceivers[localSlot];
+  if (local && local.currentDirection !== 'stopped' && local.receiver.track.kind === 'video') {
+    try {
+      if (local.direction === 'inactive' || local.direction === 'sendonly') {
+        local.direction = 'sendrecv';
+      } else if (local.direction === 'recvonly') {
+        local.direction = 'sendrecv';
+      }
+    } catch {
+      // direction may be immutable mid-negotiation
+    }
+    state.transceivers[remoteSlot] = local;
+    logP2p('reuse local video transceiver for remote receive', {
+      remoteSlot,
+      localSlot,
+      mid: local.mid,
+      direction: local.direction,
+      currentDirection: local.currentDirection,
+    });
+    return;
+  }
+
+  state.transceivers[remoteSlot] = state.connection.addTransceiver('video', { direction: 'recvonly' });
+  logP2p('added dedicated recvonly video transceiver', {
+    remoteSlot,
+    mid: state.transceivers[remoteSlot]?.mid,
+  });
 }
 
 function setRemoteTransceiverDirection(
@@ -1197,10 +1259,15 @@ function buildRemoteContentMids(contents: MediaContent[]) {
       ? (state.transceivers.remoteAudio?.mid || audioContent.ssrc) : getMediaMids().audio;
   }
   if (mainVideoContent) {
-    result[mainVideoContent.ssrc] = state.transceivers.remoteVideo?.mid || mainVideoContent.ssrc;
+    // Prefer remote slot, then shared local sendrecv mid (video calls).
+    result[mainVideoContent.ssrc] = state.transceivers.remoteVideo?.mid
+      || state.transceivers.video?.mid
+      || mainVideoContent.ssrc;
   }
   if (presentationContent) {
-    result[presentationContent.ssrc] = state.transceivers.remotePresentation?.mid || presentationContent.ssrc;
+    result[presentationContent.ssrc] = state.transceivers.remotePresentation?.mid
+      || state.transceivers.presentation?.mid
+      || presentationContent.ssrc;
   }
 
   return result;
