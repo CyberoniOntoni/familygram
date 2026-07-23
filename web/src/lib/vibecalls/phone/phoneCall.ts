@@ -122,6 +122,8 @@ type P2pState = {
   facingMode?: VideoFacingModeEnum;
   exchangeId: number;
   lastLocalSetupKey?: string;
+  /** Avoid offer storms after the post-answer camera re-offer. */
+  hasSentFollowUpOffer?: boolean;
 };
 
 let state: P2pState | undefined;
@@ -745,6 +747,8 @@ export async function joinPhoneCall(
     }
 
     updateStreams();
+    // Re-scan receivers in case this track was only half-wired (mid map lag).
+    attachRemoteMediaFromReceivers();
   };
 
   conn.oniceconnectionstatechange = () => {
@@ -753,6 +757,7 @@ export async function joinPhoneCall(
         '@type': 'updatePhoneCallConnectionState',
         connectionState: 'connected',
       });
+      attachRemoteMediaFromReceivers();
     }
     if (!state || !isOutgoing || conn.iceConnectionState !== 'failed') {
       return;
@@ -1185,10 +1190,13 @@ async function applyRemoteNegotiation() {
       signalingState: connection.signalingState,
       transceivers: summarizeTransceivers(),
     });
+    // Pull remote tracks even when ontrack was missed (common after answer).
+    attachRemoteMediaFromReceivers();
     if (!isAnswer) {
       updateRemoteMediaStateFromOffer(pendingRemoteNegotiation.contents);
       await bindLocalAudioToSharedRemoteOffer();
       await bindLocalVideoToSharedRemoteOffer();
+      attachRemoteMediaFromReceivers();
     }
     await commitPendingIceCandidates();
 
@@ -1209,6 +1217,7 @@ async function applyRemoteNegotiation() {
         ? parseAnswerContents(localDescription.sdp, pendingRemoteNegotiation.contents, getMediaMids()) : [];
 
       updateRemoteMediaStateFromOffer(contents);
+      attachRemoteMediaFromReceivers();
       logP2p('send local answer negotiation', {
         exchangeId: pendingRemoteNegotiation.exchangeId,
         contents: summarizeContents(contents),
@@ -1222,12 +1231,15 @@ async function applyRemoteNegotiation() {
         contents,
       });
 
+      // Callee must publish a real createOffer (with camera SSRCs), not re-emit
+      // the answer SDP as NegotiateChannels — that never established remote video.
       if (shouldSendLocalOfferAfterRemoteAnswer()) {
-        logP2p('send local media offer after remote answer', {
+        state.hasSentFollowUpOffer = true;
+        logP2p('send local media offer after answering remote offer', {
           exchangeId: pendingRemoteNegotiation.exchangeId,
           transceivers: summarizeTransceivers(),
         });
-        sendLocalMediaOffer();
+        void sendOffer();
       }
     }
 
@@ -1290,9 +1302,10 @@ function prepareTransceiversForRemoteOffer(contents: MediaContent[]) {
   } else if (hasRemoteAudio && !setRemoteTransceiverDirection('remoteAudio', 'audio', 'recvonly')) {
     state.transceivers.remoteAudio = state.connection.addTransceiver('audio', { direction: 'recvonly' });
   }
-  // Video calls start with a local sendrecv camera transceiver on both peers.
-  // Do NOT add a second recvonly video m-line — Unified Plan then fails to map
-  // the remote track (audio still works; video never appears).
+  // Prefer reusing the local camera sendrecv mid so remote video maps onto the
+  // same Unified Plan m-line (audio works either way; a second recvonly m-line
+  // often never receives RTP when mids already match mid=1). Never force that
+  // shared transceiver to recvonly/inactive — that kills the local camera.
   if (hasRemoteVideo >= 1) {
     ensureRemoteVideoTransceiver('remoteVideo', 'video');
   }
@@ -1303,17 +1316,16 @@ function prepareTransceiversForRemoteOffer(contents: MediaContent[]) {
     setRemoteTransceiverDirection('remoteAudio', 'audio', 'inactive');
   }
   if (hasRemoteVideo < 1) {
-    setRemoteTransceiverDirection('remoteVideo', 'video', 'inactive');
+    deactivateDedicatedRemoteVideo('remoteVideo', 'video');
   }
   if (hasRemoteVideo < 2) {
-    setRemoteTransceiverDirection('remotePresentation', 'video', 'inactive');
+    deactivateDedicatedRemoteVideo('remotePresentation', 'presentation');
   }
 }
 
 /**
- * Prefer reusing the local camera/presentation sendrecv transceiver for remote
- * receive. Only add a dedicated recvonly transceiver when no local video exists
- * (e.g. voice call receiving mid-call video upgrade from peer).
+ * Wire remote video onto an existing local camera transceiver (shared m-line)
+ * or add a dedicated recvonly transceiver when there is no local video yet.
  */
 function ensureRemoteVideoTransceiver(
   remoteSlot: 'remoteVideo' | 'remotePresentation',
@@ -1323,16 +1335,35 @@ function ensureRemoteVideoTransceiver(
     return;
   }
 
-  if (setRemoteTransceiverDirection(remoteSlot, 'video', 'recvonly')) {
+  const local = state.transceivers[localSlot];
+  const existing = state.transceivers[remoteSlot];
+  const isSharedWithLocal = Boolean(existing && local && existing === local);
+
+  // Already wired: keep sendrecv on shared camera, recvonly only on dedicated.
+  if (existing && existing.currentDirection !== 'stopped') {
+    const direction: RTCRtpTransceiverDirection = isSharedWithLocal
+      || (local && existing === local)
+      ? 'sendrecv'
+      : 'recvonly';
+    try {
+      if (existing.direction !== direction && existing.direction !== 'stopped') {
+        existing.direction = direction;
+      }
+    } catch {
+      // direction may be immutable mid-negotiation
+    }
+    logP2p('keep remote video transceiver', {
+      remoteSlot,
+      mid: existing.mid,
+      direction: existing.direction,
+      shared: isSharedWithLocal,
+    });
     return;
   }
 
-  const local = state.transceivers[localSlot];
   if (local && local.currentDirection !== 'stopped' && local.receiver.track.kind === 'video') {
     try {
-      if (local.direction === 'inactive' || local.direction === 'sendonly') {
-        local.direction = 'sendrecv';
-      } else if (local.direction === 'recvonly') {
+      if (local.direction === 'inactive' || local.direction === 'sendonly' || local.direction === 'recvonly') {
         local.direction = 'sendrecv';
       }
     } catch {
@@ -1354,6 +1385,24 @@ function ensureRemoteVideoTransceiver(
     remoteSlot,
     mid: state.transceivers[remoteSlot]?.mid,
   });
+}
+
+/** Only deactivate dedicated remote recv slots — never the local camera mid. */
+function deactivateDedicatedRemoteVideo(
+  remoteSlot: 'remoteVideo' | 'remotePresentation',
+  localSlot: 'video' | 'presentation',
+) {
+  if (!state) {
+    return;
+  }
+
+  const remote = state.transceivers[remoteSlot];
+  const local = state.transceivers[localSlot];
+  if (!remote || remote === local) {
+    return;
+  }
+
+  setRemoteTransceiverDirection(remoteSlot, 'video', 'inactive');
 }
 
 function setRemoteTransceiverDirection(
@@ -1418,13 +1467,106 @@ function updateRemoteMediaStateFromOffer(contents: MediaContent[]) {
 }
 
 function shouldSendLocalOfferAfterRemoteAnswer() {
-  if (!state || state.isOutgoing || state.pendingLocalExchangeId) {
+  if (!state || state.pendingLocalExchangeId || state.isMakingOffer || state.hasSentFollowUpOffer) {
+    return false;
+  }
+
+  // Caller already published media in the initial join offer.
+  if (state.isOutgoing) {
     return false;
   }
 
   return Boolean(getStreamTrack(state.streams.ownAudio)?.enabled
     || getStreamTrack(state.streams.ownVideo)?.enabled
     || getStreamTrack(state.streams.ownPresentation)?.enabled);
+}
+
+/**
+ * Attach remote audio/video from transceiver receivers when ontrack did not fire
+ * (or fired before we swapped ownVideo / mid maps).
+ */
+function attachRemoteMediaFromReceivers() {
+  if (!state) {
+    return;
+  }
+
+  const ownAudio = getStreamTrack(state.streams.ownAudio, 'audio');
+  const ownVideo = getStreamTrack(state.streams.ownVideo, 'video');
+  const ownPresentation = getStreamTrack(state.streams.ownPresentation, 'video');
+  let changed = false;
+
+  state.connection.getTransceivers().forEach((transceiver) => {
+    const track = transceiver.receiver?.track;
+    if (!track || track.readyState === 'ended') {
+      return;
+    }
+
+    if (track.kind === 'audio') {
+      if (track === ownAudio) {
+        return;
+      }
+      if (!hasLiveTrack(state!.streams.audio) || getStreamTrack(state!.streams.audio, 'audio') !== track) {
+        const stream = new MediaStream([track]);
+        state!.streams.audio = stream;
+        state!.audio.srcObject = stream;
+        state!.audio.play().catch(() => undefined);
+        changed = true;
+        logP2p('attached remote audio from receiver', {
+          mid: transceiver.mid,
+          muted: track.muted,
+        });
+      }
+      return;
+    }
+
+    if (track.kind !== 'video') {
+      return;
+    }
+    if (track === ownVideo || track === ownPresentation) {
+      return;
+    }
+
+    const isPresentation = transceiver === state!.transceivers.presentation
+      || transceiver === state!.transceivers.remotePresentation
+      || isRemoteContentTransceiver(transceiver, true);
+
+    const attach = () => {
+      if (!state) return;
+      const stream = new MediaStream([track]);
+      if (isPresentation) {
+        state.transceivers.remotePresentation = transceiver;
+        state.remoteMediaState.screencastState = 'active';
+        state.streams.presentation = stream;
+      } else {
+        state.transceivers.remoteVideo = transceiver;
+        state.remoteMediaState.videoState = 'active';
+        state.streams.video = stream;
+      }
+      updateStreams();
+      logP2p('attached remote video from receiver', {
+        mid: transceiver.mid,
+        muted: track.muted,
+        readyState: track.readyState,
+        isPresentation,
+      });
+    };
+
+    const current = isPresentation
+      ? getStreamTrack(state!.streams.presentation, 'video')
+      : getStreamTrack(state!.streams.video, 'video');
+    if (current !== track) {
+      attach();
+      changed = true;
+    }
+
+    track.onunmute = () => {
+      attach();
+    };
+  });
+
+  if (changed) {
+    updateStreams();
+  }
 }
 
 async function bindLocalAudioToSharedRemoteOffer() {
