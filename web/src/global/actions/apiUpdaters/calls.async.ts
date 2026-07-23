@@ -442,7 +442,15 @@ async function processPhoneCallSignalingData(queued: QueuedPhoneCallSignalingDat
 function logPhoneCallDebug(message: string, data: Record<string, unknown>) {
   if (!DEBUG_CALLS) return;
 
-  logDebugMessage('warn', `[PhoneCall] ${message}`, data);
+  // info so DevTools shows without enabling Verbose
+  logDebugMessage('info', `[PhoneCall] ${message}`, data);
+  // Also feed the P2P ring buffer when available
+  try {
+    // eslint-disable-next-line no-console
+    console.info(`[PhoneCall] ${message}`, data);
+  } catch {
+    // ignore
+  }
 }
 
 function isSctpSignalingData(data: number[]) {

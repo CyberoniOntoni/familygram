@@ -11,6 +11,11 @@ import { DEBUG_CALLS } from '../../../config';
 import { logDebugMessage } from '../../../util/debugConsole';
 import { black, silence } from '../fallbackMedia';
 import {
+  callDebugLog,
+  installCallDebugGlobal,
+  isCallDebugEnabled,
+} from './callDebug';
+import {
   findSdpLineValue as findLineValue,
   getSdpDirection,
   getSdpPort,
@@ -143,13 +148,86 @@ function updateStreams() {
 }
 
 function logP2p(message: string, data: Record<string, unknown> = {}) {
-  if (!DEBUG_CALLS) return;
-
-  logDebugMessage('debug', `[PhoneCall][P2P] ${message}`, JSON.stringify(data), data);
+  if (!DEBUG_CALLS && !isCallDebugEnabled()) return;
+  // Always surface at info so DevTools shows without Verbose filter.
+  callDebugLog('info', message, data);
+  // Keep ring buffer used by older download-log tools.
+  try {
+    logDebugMessage('info', `[PhoneCall][P2P] ${message}`, data);
+  } catch {
+    // ignore
+  }
 }
 
 function logP2pWarning(message: string, data: Record<string, unknown> = {}) {
-  logDebugMessage('warn', `[PhoneCall][P2P] ${message}`, JSON.stringify(data), data);
+  callDebugLog('warn', message, data);
+  try {
+    logDebugMessage('warn', `[PhoneCall][P2P] ${message}`, data);
+  } catch {
+    // ignore
+  }
+}
+
+let statsTimer: ReturnType<typeof setInterval> | undefined;
+
+function stopCallStatsProbe() {
+  if (statsTimer) {
+    clearInterval(statsTimer);
+    statsTimer = undefined;
+  }
+}
+
+function startCallStatsProbe() {
+  stopCallStatsProbe();
+  if (!DEBUG_CALLS && !isCallDebugEnabled()) return;
+
+  let tick = 0;
+  statsTimer = setInterval(() => {
+    void (async () => {
+      if (!state?.connection) return;
+      tick += 1;
+      try {
+        const report = await state.connection.getStats();
+        const video: Record<string, unknown>[] = [];
+        const audio: Record<string, unknown>[] = [];
+        report.forEach((row) => {
+          if (row.type !== 'inbound-rtp' && row.type !== 'outbound-rtp') return;
+          const entry = {
+            type: row.type,
+            kind: (row as any).kind,
+            bytes: (row as any).bytesReceived ?? (row as any).bytesSent,
+            packets: (row as any).packetsReceived ?? (row as any).packetsSent,
+            packetsLost: (row as any).packetsLost,
+            framesDecoded: (row as any).framesDecoded,
+            framesEncoded: (row as any).framesEncoded,
+            frameWidth: (row as any).frameWidth,
+            frameHeight: (row as any).frameHeight,
+            mid: (row as any).mid,
+          };
+          if ((row as any).kind === 'video') video.push(entry);
+          if ((row as any).kind === 'audio') audio.push(entry);
+        });
+        logP2p('stats probe', {
+          tick,
+          connectionState: state.connection.connectionState,
+          ice: state.connection.iceConnectionState,
+          signaling: state.connection.signalingState,
+          mids: getMediaMids(),
+          localVideoEnabled: Boolean(getStreamTrack(state.streams.ownVideo, 'video')?.enabled),
+          remoteVideoLive: Boolean(getStreamTrack(state.streams.video, 'video')?.readyState === 'live'),
+          remoteVideoMuted: getStreamTrack(state.streams.video, 'video')?.muted,
+          remoteVideoState: state.remoteMediaState.videoState,
+          transceivers: summarizeTransceivers(),
+          videoRtp: video,
+          audioRtp: audio,
+        });
+      } catch (err) {
+        logP2pWarning('stats probe failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    })();
+  }, 2000);
 }
 
 function getUserStream(streamType: StreamType, facing: VideoFacingModeEnum = 'user') {
@@ -496,15 +574,22 @@ export async function joinPhoneCall(
 
   const audio = new Audio();
   audio.autoplay = true;
+  if (DEBUG_CALLS) {
+    installCallDebugGlobal();
+  }
   logP2p('join', {
     isOutgoing,
     shouldStartVideo,
+    isP2p,
     iceTransportPolicy: isP2p ? 'all' : 'relay',
+    connectionCount: connections.length,
     iceServers: connections.map((connection) => {
       return {
         isTurn: connection.isTurn,
         isStun: connection.isStun,
+        ip: connection.ip,
         port: connection.port,
+        hasUser: Boolean(connection.username),
       };
     }),
   });
@@ -697,7 +782,18 @@ export async function joinPhoneCall(
 
   if (state) {
     state.isStarting = false;
+    logP2p('join complete', {
+      isOutgoing,
+      shouldStartVideo,
+      mids: getMediaMids(),
+      localVideoEnabled: Boolean(getStreamTrack(state.streams.ownVideo, 'video')?.enabled),
+      hasVideoTransceiver: Boolean(state.transceivers.video),
+      hasDataChannel: Boolean(state.dataChannel),
+      transceivers: summarizeTransceivers(),
+    });
   }
+
+  startCallStatsProbe();
 
   if (isOutgoing) {
     await sendOffer();
@@ -706,6 +802,14 @@ export async function joinPhoneCall(
 
 export function stopPhoneCall() {
   if (!state) return;
+
+  stopCallStatsProbe();
+  logP2p('stop phone call', {
+    mids: getMediaMids(),
+    localVideoEnabled: Boolean(getStreamTrack(state.streams.ownVideo, 'video')?.enabled),
+    remoteVideoLive: Boolean(getStreamTrack(state.streams.video, 'video')?.readyState === 'live'),
+    connectionState: state.connection.connectionState,
+  });
 
   stopStream(state.streams.ownVideo);
   stopStream(state.streams.ownPresentation);

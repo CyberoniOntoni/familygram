@@ -7,6 +7,11 @@ export {
 export {
   joinPhoneCall, processSignalingMessage, getStreams, toggleStreamP2p, stopPhoneCall, switchCameraInputP2p,
 } from './phone/phoneCall';
+export {
+  installCallDebugGlobal,
+  callDebugDump,
+  callDebugHelp,
+} from './phone/callDebug';
 export * from './phone/signalingMessages';
 export {
   IS_SCREENSHARE_SUPPORTED, sanitizePrimitiveRecord, THRESHOLD,

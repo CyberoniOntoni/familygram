@@ -8,9 +8,10 @@ import {
 } from './global';
 
 import {
-  DEBUG, STRICTERDOM_ENABLED,
+  DEBUG, DEBUG_CALLS, STRICTERDOM_ENABLED,
 } from './config';
 import { enableStrict, requestMutation } from './lib/fasterdom/fasterdom';
+import { installCallDebugGlobal } from './lib/vibecalls/phone/callDebug';
 import { selectChat, selectCurrentMessageList, selectPeerFullInfo, selectTabState } from './global/selectors';
 import { selectSharedSettings } from './global/selectors/sharedState';
 import { betterView } from './util/betterView';
@@ -34,6 +35,11 @@ import './styles/index.scss';
 
 if (STRICTERDOM_ENABLED) {
   enableStrict();
+}
+
+// Always install on FamilyGram so __fgCallDebug is available before the first call.
+if (DEBUG_CALLS) {
+  installCallDebugGlobal();
 }
 
 if (IS_TAURI) {
