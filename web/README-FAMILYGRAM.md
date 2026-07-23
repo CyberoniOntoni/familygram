@@ -4,7 +4,7 @@ Self-hosted [telegram-tt](https://github.com/Ajaxy/telegram-tt) web client for [
 
 Part of the unified [FamilyGram](https://github.com/CyberoniOntoni/familygram) monorepo — use `deploy/install.sh` or `docker compose` from the repo root for the recommended setup.
 
-Verified on Testgram layer **224** with login, chats, messaging, and voice/video calls.
+Verified on FamilyGram-Server wire layer **228** (open session-server) with login, chats, messaging, and calls.
 
 ## Requirements
 
@@ -77,16 +77,19 @@ Environment variables for `deploy-now.py`:
 
 After each deploy, users should **clear site data** for the web URL so the new JS bundle loads.
 
-## Testgram-specific patches
+## FamilyGram TL / layer
 
-The upstream telegram-tt client targets MTProto layer 227. Testgram negotiates layer 224. FamilyGram builds apply compatibility shims in `src/util/familygramTlCompat.ts`:
+Wire layer is **228** (`TG_GRAMJS_LAYER=228`, `invokeWithLayer` 228). Requires FamilyGram-Server open session-server and messenger images built with `Layers.LayerLatest = 228`.
+
+`src/util/familygramTlCompat.ts` keeps **224 constructor IDs as read aliases** only so mixed traffic during migration still deserializes.
 
 | Issue | Fix |
 |-------|-----|
-| `messages.sendMessage#fef48f62` rejected by Testgram | Rewritten to `#545cd15a` on the wire |
-| `message#3ae56482` from server not recognized | Constructor alias for inbound updates |
+| Layer negotiation | `AllTLObjects.LAYER` / vite `TG_GRAMJS_LAYER` → **228** for self-hosted |
+| send/edit/saveDraft | Layer **228** constructors (`#fef48f62`, `#b106e66c`, `#ad0fa15c`) |
+| user / message / channel | Layer **228** primary; 224 IDs aliased for read |
 | `getDhConfig` with `randomLength: 0` → `RANDOM_LENGTH_INVALID` | Uses `randomLength: 256` for calls |
-| Official Telegram RSA keys | Testgram production key fingerprint in `RSA.ts` |
+| Official Telegram RSA keys | FamilyGram production key fingerprint in `RSA.ts` |
 | `aicompose.getTones` unsupported | Skipped on FamilyGram |
 | Service worker caching stale bundles | Disabled for FamilyGram |
 

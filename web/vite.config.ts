@@ -61,7 +61,7 @@ type ReportOutputBundle = Record<string, unknown>;
 
 export default defineConfig(({ mode }): UserConfig => {
   // loadEnv only reads .env* files. Docker compose/Dockerfile ENV lives on process.env —
-  // merge so FAMILYGRAM_SELF_HOSTED=1 enables layer-224 TL compat in production images.
+  // merge so FAMILYGRAM_SELF_HOSTED=1 enables layer-228 wire + FamilyGram TL in production images.
   const fileEnv = loadEnv(mode, process.cwd(), '');
   const env = {
     ...fileEnv,
@@ -196,7 +196,8 @@ export default defineConfig(({ mode }): UserConfig => {
     TG_TEST_SESSION: env.TEST_SESSION || '',
     TG_FAMILYGRAM_SELF_HOSTED: FAMILYGRAM_SELF_HOSTED || '0',
     TG_PRODUCTION_HOSTNAME: PRODUCTION_HOSTNAME || '',
-    TG_GRAMJS_LAYER: FAMILYGRAM_SELF_HOSTED === '1' ? '224' : '227',
+    // Self-hosted stack uses open session-server + LayerLatest=228.
+    TG_GRAMJS_LAYER: FAMILYGRAM_SELF_HOSTED === '1' ? '228' : '227',
   });
 
   return {

@@ -1579,6 +1579,7 @@ namespace Api {
     botActiveUsers?: int;
     botVerificationIcon?: long;
     sendPaidMessagesStars?: long;
+    linkedCommunityId?: long;
   }> {
     // flags: Api.Type;
     self?: true;
@@ -1632,7 +1633,8 @@ namespace Api {
     botActiveUsers?: int;
     botVerificationIcon?: long;
     sendPaidMessagesStars?: long;
-    CONSTRUCTOR_ID: 829899656;
+    linkedCommunityId?: long;
+    CONSTRUCTOR_ID: 2981678211;
     SUBCLASS_OF_ID: 765557111;
     className: 'User';
 
@@ -1842,6 +1844,7 @@ namespace Api {
     botVerificationIcon?: long;
     sendPaidMessagesStars?: long;
     linkedMonoforumId?: long;
+    linkedCommunityId?: long;
   }> {
     // flags: Api.Type;
     creator?: true;
@@ -1894,7 +1897,8 @@ namespace Api {
     botVerificationIcon?: long;
     sendPaidMessagesStars?: long;
     linkedMonoforumId?: long;
-    CONSTRUCTOR_ID: 473084188;
+    linkedCommunityId?: long;
+    CONSTRUCTOR_ID: 3567203526;
     SUBCLASS_OF_ID: 3316604308;
     className: 'Channel';
 
@@ -8433,12 +8437,16 @@ namespace Api {
     static fromReader(reader: Reader): StickerSet;
   }
   export class BotCommand extends VirtualClass<{
+    // flags: Api.Type;
+    ephemeral?: true;
     command: string;
     description: string;
   }> {
+    // flags: Api.Type;
+    ephemeral?: true;
     command: string;
     description: string;
-    CONSTRUCTOR_ID: 3262826695;
+    CONSTRUCTOR_ID: 2555565778;
     SUBCLASS_OF_ID: 236872386;
     className: 'BotCommand';
 
@@ -26818,6 +26826,7 @@ namespace Api {
       groupsOnly?: true;
       usersOnly?: true;
       folderId?: int;
+      community?: Api.TypeInputChannel;
       q: string;
       filter: Api.TypeMessagesFilter;
       minDate: int;
@@ -26832,6 +26841,7 @@ namespace Api {
       groupsOnly?: true;
       usersOnly?: true;
       folderId?: int;
+      community?: Api.TypeInputChannel;
       q: string;
       filter: Api.TypeMessagesFilter;
       minDate: int;
