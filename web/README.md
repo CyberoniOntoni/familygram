@@ -1,6 +1,6 @@
 # Telegram Web A
 
-> **FamilyGram (Testgram self-host):** see [README-FAMILYGRAM.md](./README-FAMILYGRAM.md) for build, deploy, and Testgram layer-224 compatibility notes. Production web client: [CyberoniOntoni/familygram-web](https://github.com/CyberoniOntoni/familygram-web).
+> **FamilyGram (self-hosted):** see [README-FAMILYGRAM.md](./README-FAMILYGRAM.md) for build, deploy, and MTProto **layer 228** notes. Unified monorepo: [CyberoniOntoni/familygram](https://github.com/CyberoniOntoni/familygram) (`main`).
 
 This project won the first prize 🥇 at [Telegram Lightweight Client Contest](https://contest.com/javascript-web-3) and now is an official Telegram client available to anyone at [web.telegram.org/a](https://web.telegram.org/a).
 

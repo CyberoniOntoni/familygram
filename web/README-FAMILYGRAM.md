@@ -2,9 +2,9 @@
 
 Self-hosted [telegram-tt](https://github.com/Ajaxy/telegram-tt) web client for [FamilyGram Server](https://github.com/CyberoniOntoni/FamilyGram-Server).
 
-Part of the unified [FamilyGram](https://github.com/CyberoniOntoni/familygram) monorepo — use `deploy/install.sh` or `docker compose` from the repo root for the recommended setup.
+Part of the unified [FamilyGram](https://github.com/CyberoniOntoni/familygram) monorepo (`main` branch) — use `deploy/install.sh` or `docker compose` from the repo root for the recommended setup.
 
-Verified on FamilyGram-Server wire layer **228** (open session-server) with login, chats, messaging, and calls.
+Verified with FamilyGram-Server wire layer **228** (open session-server): login, chats, messaging, media, and calls.
 
 ## Requirements
 
@@ -16,7 +16,7 @@ Verified on FamilyGram-Server wire layer **228** (open session-server) with logi
 
 ```bash
 cp .env.production.example .env.production
-# Fill TELEGRAM_API_ID / TELEGRAM_API_HASH from my.telegram.org (same as Testgram .env)
+# Fill TELEGRAM_API_ID / TELEGRAM_API_HASH from my.telegram.org (same as FamilyGram compose .env)
 # Set BASE_URL and PRODUCTION_HOSTNAME to your public web URL
 
 npm ci
@@ -48,7 +48,7 @@ Deploy the `dist/` folder to your web host. Example nginx locations:
 cp .env.example .env
 # Add API credentials and FAMILYGRAM_SELF_HOSTED=1
 
-FAMILYGRAM_SELF_HOSTED=1 FAMILYGRAM_GATEWAY_URL=http://YOUR_TESTGRAM_IP:30444 npm run dev
+FAMILYGRAM_SELF_HOSTED=1 FAMILYGRAM_GATEWAY_URL=http://YOUR_SERVER_IP:30444 npm run dev
 ```
 
 ## Deploy to server
@@ -79,14 +79,14 @@ After each deploy, users should **clear site data** for the web URL so the new J
 
 ## FamilyGram TL / layer
 
-Wire layer is **228** (`TG_GRAMJS_LAYER=228`, `invokeWithLayer` 228). Requires FamilyGram-Server open session-server and messenger images built with `Layers.LayerLatest = 228`.
+Wire layer is **228** (`TG_GRAMJS_LAYER=228`, `invokeWithLayer` 228). Requires FamilyGram-Server open session-server and messenger images from **`main`** (`Layers.LayerLatest = 228`).
 
-`src/util/familygramTlCompat.ts` keeps **224 constructor IDs as read aliases** only so mixed traffic during migration still deserializes.
+`src/util/familygramTlCompat.ts` keeps selected **224 constructor IDs as read aliases** so mixed traffic during client migration still deserializes.
 
 | Issue | Fix |
 |-------|-----|
 | Layer negotiation | `AllTLObjects.LAYER` / vite `TG_GRAMJS_LAYER` → **228** for self-hosted |
-| send/edit/saveDraft | Layer **228** constructors (`#fef48f62`, `#b106e66c`, `#ad0fa15c`) |
+| send/edit/saveDraft | Layer **228** constructors |
 | user / message / channel | Layer **228** primary; 224 IDs aliased for read |
 | `getDhConfig` with `randomLength: 0` → `RANDOM_LENGTH_INVALID` | Uses `randomLength: 256` for calls |
 | Official Telegram RSA keys | FamilyGram production key fingerprint in `RSA.ts` |
@@ -100,7 +100,7 @@ Other FamilyGram changes: same-origin WebSocket transport (`familygramServer.ts`
 | Script | Purpose |
 |--------|---------|
 | `deploy/deploy-now.py` | Upload dist tarball and reload nginx |
-| `deploy/reset-testgram-db.py` | Wipe Testgram data (destructive) |
+| `deploy/reset-testgram-db.py` | Wipe FamilyGram data (destructive) |
 | `deploy/fix-telegram-service-user.py` | Ensure user `777000` exists for chat list |
 | `deploy/check-messaging-calls.py` | Tail server logs for send/call errors |
 | `deploy/check-chats-deep.py` | Diagnose chat loading issues |
@@ -108,9 +108,9 @@ Other FamilyGram changes: same-origin WebSocket transport (`familygramServer.ts`
 ## Architecture (example deployment)
 
 ```
-Browser → NPM (443) → nginx :8082 → Testgram gateway :30444 (/apiws)
-                              ↓
-                         dist/ static
+Browser → reverse proxy (443) → familygram-web :8082 → gateway :30444 (/apiws)
+                                      ↓
+                                 dist/ static
 ```
 
 Public URL example: `https://web.example.com`
@@ -119,6 +119,6 @@ Public URL example: `https://web.example.com`
 
 | Client | Repository |
 |--------|------------|
-| Server | [CyberoniOntoni/FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) |
+| Unified stack | [CyberoniOntoni/familygram](https://github.com/CyberoniOntoni/familygram) (`main`) |
+| Server | [CyberoniOntoni/FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) (`main`) |
 | Desktop | [CyberoniOntoni/familygram-desktop](https://github.com/CyberoniOntoni/familygram-desktop) |
-| Web (this) | [CyberoniOntoni/familygram-web](https://github.com/CyberoniOntoni/familygram-web) |

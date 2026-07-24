@@ -92,24 +92,17 @@ FIXED_VERIFY_CODE=12345 \
 sudo bash install.sh --non-interactive --start
 ```
 
-### Bleeding-edge (layer 228)
+### Branch and image tags
 
-Deploys the `layer228` web client and pulls matching FamilyGram-Server images tagged `layer228` from GHCR (not production `:latest`).
+- Installer clones **`main`** of this repo (`REPO_BRANCH=main` by default).
+- Server images default to `FamilyGramServerVersion=**latest**` from
+  `ghcr.io/cyberoniontoni/familygram-server` (built from FamilyGram-Server **`main`**).
+- Product wire layer is **MTProto layer 228** (open session-server + matching web client).
 
 ```bash
-# Fresh install
-curl -fsSL https://raw.githubusercontent.com/CyberoniOntoni/familygram/layer228/deploy/install.sh -o install.sh
-PUBLIC_IP=… LAN_IP=… WEB_DOMAIN=… TELEGRAM_API_ID=… TELEGRAM_API_HASH=… FIXED_VERIFY_CODE=12345 \
-  REPO_BRANCH=layer228 \
-  sudo bash install.sh --non-interactive --start
-
-# Or from an existing clone
-cd /opt/familygram
-sudo REPO_BRANCH=layer228 bash deploy/install.sh --non-interactive --start \
-  --public-ip … --lan-ip … --web-domain … --api-id … --api-hash … --fixed-verify-code 12345
+# Optional overrides
+REPO_BRANCH=main FamilyGramServerVersion=latest sudo bash install.sh --non-interactive --start
 ```
-
-Requires [FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) CI to have published `ghcr.io/cyberoniontoni/familygram-server/*:layer228`. Override with `FamilyGramServerVersion=…` if needed.
 
 ## Uninstall
 
@@ -362,17 +355,16 @@ Server binaries are pulled from [CyberoniOntoni/FamilyGram-Server](https://githu
 
 | Platform | Repository |
 |----------|------------|
-| Server source | [CyberoniOntoni/FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) (`layer228`) |
-| Web source (standalone) | [CyberoniOntoni/familygram-web](https://github.com/CyberoniOntoni/familygram-web) |
+| Server source | [CyberoniOntoni/FamilyGram-Server](https://github.com/CyberoniOntoni/FamilyGram-Server) (`main`) |
+| Unified stack (this repo) | [CyberoniOntoni/familygram](https://github.com/CyberoniOntoni/familygram) (`main`) |
 | Desktop | [CyberoniOntoni/familygram-desktop](https://github.com/CyberoniOntoni/familygram-desktop) |
-| Android | [CyberoniOntoni/testgram-android](https://github.com/CyberoniOntoni/testgram-android) (`layer228`) |
-| iOS | [CyberoniOntoni/mytelegram-iOS](https://github.com/CyberoniOntoni/mytelegram-iOS) (`layer228`) |
-| WebK | [CyberoniOntoni/mytelegram-webk](https://github.com/CyberoniOntoni/mytelegram-webk) (`layer228`) |
-| TDLib | [CyberoniOntoni/mytelegram-td](https://github.com/CyberoniOntoni/mytelegram-td) (`layer228`) |
-| Bot API | [CyberoniOntoni/mytelegram-bot-api](https://github.com/CyberoniOntoni/mytelegram-bot-api) (`layer228`) |
-| opengram (session-server research) | [CyberoniOntoni/opengram](https://github.com/CyberoniOntoni/opengram) (`layer228`) |
+| Android | [CyberoniOntoni/testgram-android](https://github.com/CyberoniOntoni/testgram-android) |
+| iOS | [CyberoniOntoni/mytelegram-iOS](https://github.com/CyberoniOntoni/mytelegram-iOS) |
+| WebK | [CyberoniOntoni/mytelegram-webk](https://github.com/CyberoniOntoni/mytelegram-webk) |
+| TDLib | [CyberoniOntoni/mytelegram-td](https://github.com/CyberoniOntoni/mytelegram-td) |
+| Bot API | [CyberoniOntoni/mytelegram-bot-api](https://github.com/CyberoniOntoni/mytelegram-bot-api) |
 
-**Closed upstream images (not forkable):** `mytelegram/mytelegram-session-server`, `mytelegram/mytelegram-file-server`. Wire layer stays **224** until a FamilyGram-owned session-server exists — see FamilyGram-Server [docs/UPSTREAM_FORKS.md](https://github.com/CyberoniOntoni/FamilyGram-Server/blob/layer228/docs/UPSTREAM_FORKS.md).
+**Open server images:** `session-server` and `file-server` are built and published by FamilyGram-Server CI (`:latest` from `main`). Wire layer is **228**. See [UPSTREAM_FORKS.md](https://github.com/CyberoniOntoni/FamilyGram-Server/blob/main/docs/UPSTREAM_FORKS.md).
 
 ## Language packs (English / Russian)
 
@@ -407,4 +399,4 @@ bash deploy/fetch-langpacks.sh
 
 ## Web client details
 
-See [`web/README-FAMILYGRAM.md`](web/README-FAMILYGRAM.md) for TL layer-224 compatibility patches, dev mode, and troubleshooting.
+See [`web/README-FAMILYGRAM.md`](web/README-FAMILYGRAM.md) for TL layer **228** setup, migration aliases, dev mode, and troubleshooting.
