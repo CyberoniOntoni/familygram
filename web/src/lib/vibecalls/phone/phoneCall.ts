@@ -570,12 +570,13 @@ export async function joinPhoneCall(
     streams: [silentStream],
   });
 
-  // Reserve the video m-line BEFORE the data channel so browser mids stay
-  // audio=0, video=1, data=2 (or similar) instead of data stealing mid 1.
-  // That mid-1 collision made remote video map onto the SCTP section.
+  // Always reserve the video m-line BEFORE the data channel so browser mids stay
+  // audio=0, video=1, data=2. Without a pre-reserved video section the callee has
+  // no stable transceiver for the caller's video until late renegotiation, and mid-1
+  // can be stolen by the data channel.
   let videoTransceiver: RTCRtpTransceiver | undefined;
   const blackVideoTrack = getStreamTrack(blackVideo, 'video');
-  if (shouldStartVideo && blackVideoTrack) {
+  if (blackVideoTrack) {
     videoTransceiver = conn.addTransceiver(blackVideoTrack, {
       direction: 'sendrecv',
       streams: [blackVideo],
@@ -732,21 +733,22 @@ export async function joinPhoneCall(
       ) {
         state.transceivers.remotePresentation = event.transceiver;
         const applyPresentation = () => {
-          if (!state || event.track.muted) return;
+          if (!state || event.track.readyState === 'ended') return;
           state.remoteMediaState.screencastState = 'active';
           state.streams.presentation = stream;
           updateStreams();
         };
+        applyPresentation();
         if (event.track.muted) {
           event.track.onunmute = applyPresentation;
-        } else {
-          applyPresentation();
         }
       } else {
         // Matches remoteVideo, local video sendrecv mid, or unknown video mid.
+        // Attach even while muted — Safari/iOS often keeps remote tracks muted until
+        // the first keyframe; refusing to attach made the callee never see the caller.
         state.transceivers.remoteVideo = event.transceiver;
         const applyRemoteVideo = () => {
-          if (!state || event.track.muted) return;
+          if (!state || event.track.readyState === 'ended') return;
           state.remoteMediaState.videoState = 'active';
           state.streams.video = stream;
           updateStreams();
@@ -757,13 +759,12 @@ export async function joinPhoneCall(
             readyState: event.track.readyState,
           });
         };
+        applyRemoteVideo();
         if (event.track.muted) {
-          logP2p('remote video track muted; wait for unmute', {
+          logP2p('remote video track muted; stream attached, waiting for frames', {
             mid: event.transceiver.mid,
           });
           event.track.onunmute = applyRemoteVideo;
-        } else {
-          applyRemoteVideo();
         }
       }
     } else {
@@ -785,6 +786,10 @@ export async function joinPhoneCall(
         connectionState: 'connected',
       });
       attachRemoteMediaFromReceivers();
+      // Safari often delivers remote video frames a beat after ICE connected.
+      window.setTimeout(() => attachRemoteMediaFromReceivers(), 250);
+      window.setTimeout(() => attachRemoteMediaFromReceivers(), 1000);
+      window.setTimeout(() => attachRemoteMediaFromReceivers(), 2500);
     }
     if (!state || !isOutgoing || conn.iceConnectionState !== 'failed') {
       return;
@@ -1510,8 +1515,8 @@ function shouldSendLocalOfferAfterRemoteAnswer() {
 
 /**
  * Attach remote audio/video from transceiver receivers when ontrack did not fire.
- * Never promote a muted receiver track as "active" — that showed a black square
- * and blocked the real remote stream after it arrived (regression after H264 work).
+ * Attach live remote video even while muted (Safari often stays muted until the
+ * first keyframe). UI already treats muted-but-live tracks as present.
  */
 function attachRemoteMediaFromReceivers() {
   if (!state) {
@@ -1521,6 +1526,9 @@ function attachRemoteMediaFromReceivers() {
   const ownAudio = getStreamTrack(state.streams.ownAudio, 'audio');
   const ownVideo = getStreamTrack(state.streams.ownVideo, 'video');
   const ownPresentation = getStreamTrack(state.streams.ownPresentation, 'video');
+  // Placeholder black tracks must never be treated as "own live" for skip logic.
+  const blackVideoTrack = getStreamTrack(state.blackVideo, 'video');
+  const blackPresentationTrack = getStreamTrack(state.blackPresentation, 'video');
   let changed = false;
 
   state.connection.getTransceivers().forEach((transceiver) => {
@@ -1550,7 +1558,15 @@ function attachRemoteMediaFromReceivers() {
     if (track.kind !== 'video') {
       return;
     }
-    if (track === ownVideo || track === ownPresentation) {
+    // Skip only the *camera* local track, not the black placeholder (same
+    // transceiver receives remote video on Unified Plan sendrecv).
+    if (track === ownVideo && track !== blackVideoTrack) {
+      return;
+    }
+    if (track === ownPresentation && track !== blackPresentationTrack) {
+      return;
+    }
+    if (track === blackVideoTrack || track === blackPresentationTrack) {
       return;
     }
 
@@ -1559,7 +1575,7 @@ function attachRemoteMediaFromReceivers() {
       || isRemoteContentTransceiver(transceiver, true);
 
     const attach = () => {
-      if (!state || track.muted) return;
+      if (!state || track.readyState === 'ended') return;
       const stream = new MediaStream([track]);
       if (isPresentation) {
         state.transceivers.remotePresentation = transceiver;
@@ -1579,20 +1595,17 @@ function attachRemoteMediaFromReceivers() {
       });
     };
 
-    // Wait for the first frame — muted live tracks are empty placeholders.
-    if (track.muted) {
-      track.onunmute = () => {
-        attach();
-      };
-      return;
-    }
-
     const current = isPresentation
       ? getStreamTrack(state!.streams.presentation, 'video')
       : getStreamTrack(state!.streams.video, 'video');
     if (current !== track) {
       attach();
       changed = true;
+    }
+    if (track.muted) {
+      track.onunmute = () => {
+        attach();
+      };
     }
   });
 
@@ -1667,35 +1680,36 @@ async function bindLocalVideoToSharedRemoteOffer() {
       mid: offerTransceiver.mid,
       track: summarizeTrack(videoTrack || undefined),
     });
-    return;
+    // Do not return early — still attach the remote receiver track below.
   }
 
-  // After setRemoteDescription, pull remote track if ontrack lagged — only when unmuted.
-  if (localVideo?.receiver?.track && localVideo.receiver.track.readyState === 'live') {
-    const remoteTrack = localVideo.receiver.track;
+  // After setRemoteDescription, pull remote track if ontrack lagged (muted OK).
+  const videoXc = state.transceivers.video;
+  if (videoXc?.receiver?.track && videoXc.receiver.track.readyState === 'live') {
+    const remoteTrack = videoXc.receiver.track;
     const ownTrack = getStreamTrack(state.streams.ownVideo, 'video');
-    if (remoteTrack === ownTrack) {
+    const blackTrack = getStreamTrack(state.blackVideo, 'video');
+    if (remoteTrack === ownTrack && remoteTrack !== blackTrack) {
       return;
     }
-    if (!remoteTrack.muted) {
+    if (remoteTrack === blackTrack) {
+      return;
+    }
+    const apply = () => {
+      if (!state || remoteTrack.readyState === 'ended') return;
       state.streams.video = new MediaStream([remoteTrack]);
       state.remoteMediaState.videoState = 'active';
-      state.transceivers.remoteVideo = localVideo;
+      state.transceivers.remoteVideo = videoXc;
       updateStreams();
       logP2p('attached remote video from local transceiver receiver', {
-        mid: localVideo.mid,
+        mid: videoXc.mid,
         muted: remoteTrack.muted,
       });
-    } else {
-      remoteTrack.onunmute = () => {
-        if (!state) return;
-        state.streams.video = new MediaStream([remoteTrack]);
-        state.remoteMediaState.videoState = 'active';
-        state.transceivers.remoteVideo = localVideo;
-        updateStreams();
-        logP2p('attached remote video after unmute', { mid: localVideo.mid });
-      };
-      logP2p('waiting for remote video unmute', { mid: localVideo.mid });
+    };
+    apply();
+    if (remoteTrack.muted) {
+      remoteTrack.onunmute = apply;
+      logP2p('remote video muted after attach; waiting for frames', { mid: videoXc.mid });
     }
   }
 }
