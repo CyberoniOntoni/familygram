@@ -2,7 +2,7 @@
 
 **FamilyGram** is a self-hosted, private messaging platform for families, teams, and small communities. It gives you a Telegram-like experience — chats, groups, media, voice/video calls, and a modern web app — on **your own server**, without depending on Telegram’s cloud.
 
-This repository is the **unified deployment package**: it wires together the backend ([FamilyGram Server](https://github.com/CyberoniOntoni/FamilyGram-Server), a [MyTelegram](https://github.com/loyldg/mytelegram) fork) and the web client ([FamilyGram Web](web/), a [telegram-tt](https://github.com/Ajaxy/telegram-tt) fork) into one Docker Compose stack with an interactive installer.
+This repository is the **unified deployment package**: it wires together the backend ([FamilyGram Server](https://github.com/CyberoniOntoni/FamilyGram-Server), a fork of [Testgram](https://github.com/glebxdlolreal/testgram)) and the web client ([FamilyGram Web](web/), a [telegram-tt](https://github.com/Ajaxy/telegram-tt) fork) into one Docker Compose stack with an interactive installer.
 
 **Contents:** [Quick install](#quick-install) · [Uninstall](#uninstall) · [Networking](#networking-and-ports) · [Manual operation](#manual-operation) · [Language packs](#language-packs-english--russian)
 
