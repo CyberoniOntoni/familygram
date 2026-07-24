@@ -531,22 +531,13 @@ ensure_compose() {
   docker compose version >/dev/null 2>&1 || die "docker compose plugin missing — install docker-compose-plugin"
 }
 
-# Map installer git branch → GHCR FamilyGramServerVersion tag.
-# Production (main/master/dev) uses :latest from FamilyGram-Server CI on dev.
-# Feature branches (e.g. layer228) pull images tagged with the same branch name.
+# GHCR image tag for FamilyGram-Server services. Product default is :latest from main CI.
 resolve_server_image_version() {
   if [[ -n "${FamilyGramServerVersion:-}" ]]; then
     printf '%s\n' "${FamilyGramServerVersion}"
     return 0
   fi
-  case "${REPO_BRANCH}" in
-    main|master|dev|"")
-      printf 'latest\n'
-      ;;
-    *)
-      printf '%s\n' "${REPO_BRANCH}"
-      ;;
-  esac
+  printf 'latest\n'
 }
 
 clone_or_update_repo() {
@@ -554,7 +545,7 @@ clone_or_update_repo() {
   if [[ -d "${INSTALL_DIR}/.git" ]]; then
     git -C "${INSTALL_DIR}" fetch origin "${REPO_BRANCH}" --depth 1 2>/dev/null \
       || git -C "${INSTALL_DIR}" fetch origin
-    # Allow switching an existing install (e.g. main → layer228) even with local edits.
+    # Reset to remote branch tip (allows re-running installer after branch renames).
     if ! git -C "${INSTALL_DIR}" checkout -B "${REPO_BRANCH}" "origin/${REPO_BRANCH}" 2>/dev/null; then
       if ! git -C "${INSTALL_DIR}" checkout "${REPO_BRANCH}" 2>/dev/null; then
         die "Cannot checkout branch '${REPO_BRANCH}' in ${INSTALL_DIR}. Does it exist on ${REPO_URL}?"
@@ -630,7 +621,7 @@ write_env_file() {
   set_env App__WebRtcConnections__0__Port "$PORT_STUN"
   set_env App__WebRtcConnections__0__Turn "True"
   set_env App__WebRtcConnections__0__Stun "True"
-  set_env App__WebRtcConnections__0__UserName "${TURN_USER:-testgram}"
+  set_env App__WebRtcConnections__0__UserName "${TURN_USER:-familygram}"
   set_env App__WebRtcConnections__0__Password "$TURN_PASS"
 
   set_env TwilioSms__Enabled "False"
@@ -682,18 +673,21 @@ write_env_file() {
     set_env WEB_BASE_URL "$web_base"
   fi
 
-  # Server images: match installer branch so layer228 web never pairs with :latest (layer 224).
-  local server_registry server_version
+  # Open FamilyGram-Server images from GHCR (messenger, session, file, …).
+  local server_registry server_version session_image
   server_registry="${FamilyGramServerRegistry:-ghcr.io/cyberoniontoni/familygram-server}"
   server_version="$(resolve_server_image_version)"
   FamilyGramServerRegistry="${server_registry}"
   FamilyGramServerVersion="${server_version}"
+  session_image="${SessionServerImage:-${server_registry}/mytelegram-session-server:${server_version}}"
   set_env FamilyGramServerRegistry "${server_registry}"
   set_env FamilyGramServerVersion "${server_version}"
+  set_env SessionServerImage "${session_image}"
   # Keep deprecated aliases in sync so older compose snippets still resolve.
   set_env TestgramRegistry "${server_registry}"
   set_env TestgramVersion "${server_version}"
   log "Server image tag: ${server_version} (registry ${server_registry})"
+  log "Session server: ${session_image}"
 }
 
 write_compose_override() {
@@ -987,9 +981,9 @@ start_stack() {
   log "Pulling server Docker images (tag: ${server_ver}) — first run may take several minutes..."
   if ! compose_with_profiles pull --ignore-buildable; then
     die "docker compose pull failed for server tag '${server_ver}'. \
-If you are on REPO_BRANCH=${REPO_BRANCH}, wait for FamilyGram-Server CI to publish \
+Wait for FamilyGram-Server CI on main to publish \
 ghcr.io/cyberoniontoni/familygram-server/*:${server_ver} \
-(workflow: Build and Push Docker Images on branch ${server_ver}), or set FamilyGramServerVersion=latest temporarily."
+(workflow: Build and Push Docker Images), or set FamilyGramServerVersion to a known tag."
   fi
 
   if [[ "${ENABLE_WEB}" == "yes" ]]; then

@@ -28,23 +28,21 @@
 #   --web-domain DOMAIN  public web hostname (e.g. web.example.com)
 #   --api-id ID          Telegram API id (my.telegram.org)
 #   --api-hash HASH      Telegram API hash
-#   --repo-branch BRANCH git branch to clone (default main; use layer228 for bleeding edge)
-#   --server-version TAG GHCR FamilyGramServerVersion (default: latest on main, else branch name)
+#   --repo-branch BRANCH git branch to clone (default: main)
+#   --server-version TAG GHCR FamilyGramServerVersion (default: latest)
 #   --help               show help
 #
-# Bleeding-edge layer 228 stack (web + matching server images):
-#   REPO_BRANCH=layer228 sudo bash install.sh --non-interactive --start ...
-#   # or:  sudo bash install.sh --repo-branch layer228 --start
+# Product stack is MTProto layer 228 on main; server images use :latest from GHCR.
 set -euo pipefail
 
 INSTALLER_ARGS=("$@")
 
-INSTALLER_VERSION="4.4.0"
+INSTALLER_VERSION="4.5.0"
 
 REPO_URL="${REPO_URL:-https://github.com/CyberoniOntoni/familygram.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
-# Server image tag on GHCR (cyberoniontoni/familygram-server/*). Empty = auto from branch.
-FamilyGramServerVersion="${FamilyGramServerVersion:-${FAMILYGRAM_SERVER_VERSION:-}}"
+# Server image tag on GHCR (cyberoniontoni/familygram-server/*). Default: latest.
+FamilyGramServerVersion="${FamilyGramServerVersion:-${FAMILYGRAM_SERVER_VERSION:-latest}}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/familygram}"
 COMPOSE_DIR="${INSTALL_DIR}/docker/compose"
 COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
@@ -84,7 +82,7 @@ TELEGRAM_API_HASH="${TELEGRAM_API_HASH:-}"
 WEB_DOMAIN="${WEB_DOMAIN:-}"
 ENABLE_WEB="${ENABLE_WEB:-yes}"
 
-TURN_USER="${TURN_USER:-testgram}"
+TURN_USER="${TURN_USER:-familygram}"
 TURN_PASS="${TURN_PASS:-}"
 SUMMARY_FILE=""
 
@@ -137,11 +135,8 @@ usage() {
   echo "  INSTALL_DOCKER=yes|no, DO_FIREWALL=yes|no"
   echo "  PORT_MT1..PORT_MT4, PORT_HTTPS, PORT_STUN, PORT_RELAY_MIN, PORT_RELAY_MAX"
   echo "  TURN_USER, TURN_PASS, INSTALL_DIR, REPO_BRANCH, REPO_URL"
-  echo "  FamilyGramServerVersion (or FAMILYGRAM_SERVER_VERSION) — GHCR tag for server images"
+  echo "  FamilyGramServerVersion (or FAMILYGRAM_SERVER_VERSION) — GHCR tag (default: latest)"
   echo "  TELEGRAM_API_ID, TELEGRAM_API_HASH, WEB_DOMAIN, WEB_HOST_PORT, ENABLE_WEB=yes|no"
-  echo ""
-  echo "Bleeding-edge (layer 228):"
-  echo "  REPO_BRANCH=layer228  # clones familygram layer228 + pulls server images tagged layer228"
   exit 0
 }
 

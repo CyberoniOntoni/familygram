@@ -366,7 +366,7 @@ Server binaries are pulled from [CyberoniOntoni/FamilyGram-Server](https://githu
 
 **Open server images:** `session-server` and `file-server` are built and published by FamilyGram-Server CI (`:latest` from `main`). Wire layer is **228**. See [UPSTREAM_FORKS.md](https://github.com/CyberoniOntoni/FamilyGram-Server/blob/main/docs/UPSTREAM_FORKS.md).
 
-## Language packs (English / Russian)
+## Language packs (UI strings)
 
 FamilyGram Web loads UI strings from **FamilyGram Server** (`langpack.getLanguages` / `langpack.getLangPack` with `lang_pack=weba`). The installer copies bundled packs into the data-seeder:
 

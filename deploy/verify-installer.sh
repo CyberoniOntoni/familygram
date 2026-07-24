@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Static checks and dry-runs of .env generation for both login modes.
-# Run on Linux:  sudo bash deploy/verify-installer.sh
+# Run on Linux:  bash deploy/verify-installer.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -23,15 +23,14 @@ source "${INSTALLER_LIB}"
 installer_lib_init
 REPO_BRANCH=main
 FamilyGramServerVersion=""
-[[ "$(resolve_server_image_version)" == "latest" ]] || { echo "main should map to latest"; exit 1; }
-REPO_BRANCH=layer228
-FamilyGramServerVersion=""
-[[ "$(resolve_server_image_version)" == "layer228" ]] || { echo "layer228 should map to layer228"; exit 1; }
+[[ "$(resolve_server_image_version)" == "latest" ]] || { echo "empty version should map to latest"; exit 1; }
 FamilyGramServerVersion=custom-tag
 [[ "$(resolve_server_image_version)" == "custom-tag" ]] || { echo "explicit version should win"; exit 1; }
+FamilyGramServerVersion=latest
+[[ "$(resolve_server_image_version)" == "latest" ]] || { echo "latest should stay latest"; exit 1; }
 echo "    ok"
 
-echo "==> language packs bundled (en + ru)"
+echo "==> language packs bundled (en + ru UI strings)"
 for lang in en ru; do
   [[ -f "${COMPOSE_DIR}/langpacks/${lang}/android.json" ]] \
     || { echo "missing ${COMPOSE_DIR}/langpacks/${lang}/android.json" >&2; exit 1; }
@@ -59,7 +58,7 @@ run_dry_run() {
   export WEB_DOMAIN="web.example.com"
   export TELEGRAM_API_ID="12345678"
   export TELEGRAM_API_HASH="abcdef0123456789abcdef0123456789"
-  export TURN_USER="testgram"
+  export TURN_USER="familygram"
   export TURN_PASS="test-turn-secret"
   export INSTALL_DIR="${ROOT}"
   export COMPOSE_DIR="${COMPOSE_DIR}"
@@ -70,6 +69,9 @@ run_dry_run() {
   export WEB_HOST_PORT=8082 WEB_CONTAINER_PORT=8082
   export PASSKEY_DOMAIN="localhost"
   export DO_FIREWALL=false
+  export REPO_BRANCH=main
+  export FamilyGramServerVersion=latest
+  export SessionServerImage=""
 
   # shellcheck disable=SC2034
   while [[ $# -gt 0 ]]; do
@@ -107,6 +109,16 @@ run_dry_run() {
   write_compose_override
   validate_required_env
 
+  local expect_ver="${FamilyGramServerVersion:-latest}"
+  grep -q "^FamilyGramServerVersion=${expect_ver}$" .env \
+    || { echo "    missing FamilyGramServerVersion=${expect_ver} in .env"; return 1; }
+  grep -q '^FamilyGramServerRegistry=ghcr.io/cyberoniontoni/familygram-server$' .env \
+    || { echo "    missing FamilyGramServerRegistry in .env"; return 1; }
+  grep -q "^SessionServerImage=ghcr.io/cyberoniontoni/familygram-server/mytelegram-session-server:${expect_ver}$" .env \
+    || { echo "    missing open SessionServerImage (...:${expect_ver}) in .env"; return 1; }
+  grep -q '^App__WebRtcConnections__0__UserName=familygram$' .env \
+    || { echo "    TURN user should be familygram"; return 1; }
+
   if [[ "${PORT_STUN:-}" == "15348" ]]; then
     grep -q '^PORT_STUN=15348$' .env || { echo "    missing PORT_STUN=15348 in .env"; return 1; }
     grep -q '^PORT_RELAY_MIN=59200$' .env || { echo "    missing PORT_RELAY_MIN=59200 in .env"; return 1; }
@@ -141,33 +153,9 @@ run_dry_run "custom STUN/TURN ports" \
   ENABLE_BOT=no BOT_TOKEN= FIXED_VERIFY_CODE=12345 \
   PORT_STUN=15348 PORT_RELAY_MIN=59200 PORT_RELAY_MAX=59220
 
-echo ""
-echo "==> dry-run: layer228 server image tag"
-export NON_INTERACTIVE=true
-export INSTALLER_VERSION="verify"
-export PUBLIC_IP="203.0.113.50" LAN_IP="192.168.1.10" BRAND="FamilyGram"
-export ENABLE_PASSKEY=no ENABLE_RTMP=no ENABLE_WEB=yes
-export WEB_DOMAIN="web.example.com"
-export TELEGRAM_API_ID="12345678" TELEGRAM_API_HASH="abcdef0123456789abcdef0123456789"
-export TURN_USER=testgram TURN_PASS=test-turn-secret
-export INSTALL_DIR="${ROOT}" COMPOSE_DIR="${COMPOSE_DIR}" COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
-export PORT_MT1=20443 PORT_MT2=20543 PORT_MT3=20643 PORT_MT4=20644
-export PORT_HTTPS=30443 PORT_HTTPS_ALT=30444 PORT_STUN=5348
-export PORT_RELAY_MIN=49152 PORT_RELAY_MAX=49172
-export WEB_HOST_PORT=8082 WEB_CONTAINER_PORT=8082 PASSKEY_DOMAIN=localhost DO_FIREWALL=false
-export ENABLE_BOT=no FIXED_VERIFY_CODE=12345 BOT_TOKEN=
-export REPO_BRANCH=layer228
-export FamilyGramServerVersion=
-cd "${COMPOSE_DIR}"
-tmp_env="${COMPOSE_DIR}/.env.verify.bak"
-[[ -f .env ]] && cp .env "${tmp_env}" || true
-write_env_file
-grep -q '^FamilyGramServerVersion=layer228$' .env \
-  || { echo "expected FamilyGramServerVersion=layer228 in .env"; exit 1; }
-grep -q '^FamilyGramServerRegistry=ghcr.io/cyberoniontoni/familygram-server$' .env \
-  || { echo "expected FamilyGramServerRegistry in .env"; exit 1; }
-echo "    FamilyGramServerVersion=layer228 OK"
-if [[ -f "${tmp_env}" ]]; then mv -f "${tmp_env}" .env; else rm -f .env; fi
+run_dry_run "explicit custom server tag" \
+  ENABLE_BOT=no BOT_TOKEN= FIXED_VERIFY_CODE=12345 \
+  FamilyGramServerVersion=sha-deadbeef
 
 echo ""
 echo "OK — installer fills required parameters for all login modes"

@@ -388,11 +388,9 @@ services:
       redis:
         condition: service_healthy
 
-  ### 3.Session server
-  # Default: closed upstream image (stable). Open FamilyGram MVP:
-  #   SessionServerImage=ghcr.io/cyberoniontoni/familygram-server/mytelegram-session-server:layer228
+  ### 3.Session server (open FamilyGram image from GHCR — required for layer 228)
   session-server:
-    image: ${SessionServerImage:-${MyTelegramRegistry}/mytelegram-session-server:${MyTelegramVersion}}
+    image: ${SessionServerImage:-${FamilyGramServerRegistry:-${TestgramRegistry:-ghcr.io/cyberoniontoni/familygram-server}}/mytelegram-session-server:${FamilyGramServerVersion:-${TestgramVersion:-latest}}}
     restart: always
     networks:
       - tg-net
