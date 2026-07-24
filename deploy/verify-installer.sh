@@ -17,6 +17,23 @@ bash -n "${INSTALLER_LIB}"
 echo "==> bash -n uninstall.sh"
 bash -n "${ROOT}/deploy/uninstall.sh"
 
+# Protect a live production .env (e.g. when run from /opt/familygram).
+PROD_ENV_GUARD="${COMPOSE_DIR}/.env"
+PROD_ENV_SNAPSHOT=""
+if [[ -f "${PROD_ENV_GUARD}" ]]; then
+  PROD_ENV_SNAPSHOT="$(mktemp)"
+  cp -a "${PROD_ENV_GUARD}" "${PROD_ENV_SNAPSHOT}"
+  echo "==> Snapshot production .env → ${PROD_ENV_SNAPSHOT}"
+fi
+restore_prod_env() {
+  if [[ -n "${PROD_ENV_SNAPSHOT}" && -f "${PROD_ENV_SNAPSHOT}" ]]; then
+    cp -a "${PROD_ENV_SNAPSHOT}" "${PROD_ENV_GUARD}"
+    rm -f "${PROD_ENV_SNAPSHOT}"
+    echo "==> Restored production .env"
+  fi
+}
+trap restore_prod_env EXIT
+
 echo "==> resolve_server_image_version mapping"
 # shellcheck source=lib/installer-lib.sh
 source "${INSTALLER_LIB}"
@@ -116,6 +133,10 @@ run_dry_run() {
     || { echo "    missing FamilyGramServerRegistry in .env"; return 1; }
   grep -q "^SessionServerImage=ghcr.io/cyberoniontoni/familygram-server/mytelegram-session-server:${expect_ver}$" .env \
     || { echo "    missing open SessionServerImage (...:${expect_ver}) in .env"; return 1; }
+  grep -q "^FileServerImage=ghcr.io/cyberoniontoni/familygram-server/mytelegram-file-server:${expect_ver}$" .env \
+    || { echo "    missing open FileServerImage (...:${expect_ver}) in .env"; return 1; }
+  grep -q "^MyTelegramRegistry=ghcr.io/cyberoniontoni/familygram-server$" .env \
+    || { echo "    MyTelegramRegistry must point at FamilyGram GHCR (not closed Hub)"; return 1; }
   grep -q '^App__WebRtcConnections__0__UserName=familygram$' .env \
     || { echo "    TURN user should be familygram"; return 1; }
 

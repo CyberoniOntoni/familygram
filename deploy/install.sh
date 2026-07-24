@@ -37,7 +37,7 @@ set -euo pipefail
 
 INSTALLER_ARGS=("$@")
 
-INSTALLER_VERSION="4.5.0"
+INSTALLER_VERSION="4.5.1"
 
 REPO_URL="${REPO_URL:-https://github.com/CyberoniOntoni/familygram.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"

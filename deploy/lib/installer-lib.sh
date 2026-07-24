@@ -673,21 +673,27 @@ write_env_file() {
     set_env WEB_BASE_URL "$web_base"
   fi
 
-  # Open FamilyGram-Server images from GHCR (messenger, session, file, …).
-  local server_registry server_version session_image
+  # Open FamilyGram-Server images from GHCR (messenger, session, file, …) — layer 228 only.
+  local server_registry server_version session_image file_image
   server_registry="${FamilyGramServerRegistry:-ghcr.io/cyberoniontoni/familygram-server}"
   server_version="$(resolve_server_image_version)"
   FamilyGramServerRegistry="${server_registry}"
   FamilyGramServerVersion="${server_version}"
   session_image="${SessionServerImage:-${server_registry}/mytelegram-session-server:${server_version}}"
+  file_image="${FileServerImage:-${server_registry}/mytelegram-file-server:${server_version}}"
   set_env FamilyGramServerRegistry "${server_registry}"
   set_env FamilyGramServerVersion "${server_version}"
   set_env SessionServerImage "${session_image}"
+  set_env FileServerImage "${file_image}"
+  # Do not leave a closed Docker Hub registry in .env (legacy MyTelegram images are not 228).
+  set_env MyTelegramRegistry "${server_registry}"
+  set_env MyTelegramVersion "${server_version}"
   # Keep deprecated aliases in sync so older compose snippets still resolve.
   set_env TestgramRegistry "${server_registry}"
   set_env TestgramVersion "${server_version}"
   log "Server image tag: ${server_version} (registry ${server_registry})"
   log "Session server: ${session_image}"
+  log "File server: ${file_image}"
 }
 
 write_compose_override() {
