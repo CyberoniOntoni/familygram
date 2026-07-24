@@ -247,8 +247,8 @@ function getUserStream(streamType: StreamType, facing: VideoFacingModeEnum = 'us
     noiseSuppression: IS_NOISE_SUPPRESSION_SUPPORTED ? true : undefined,
   } : false;
 
-  // Soft constraints: Safari/iPad often reject hard facingMode+size combos and
-  // leave us on a disabled black placeholder (peer never receives camera).
+  // Soft constraints: Safari/iPad often rejects hard facingMode+size combos and
+  // leaves us on a disabled black placeholder (peer never receives camera).
   const video = streamType === 'video' ? {
     facingMode: { ideal: facing },
     width: { ideal: 640 },
@@ -257,53 +257,15 @@ function getUserStream(streamType: StreamType, facing: VideoFacingModeEnum = 'us
   } : false;
 
   return navigator.mediaDevices.getUserMedia({ audio, video }).catch((err) => {
-    // Fallback without facingMode for desktop / strict devices.
     if (streamType !== 'video') {
       return Promise.reject(err);
     }
+    // Fallback without facingMode for desktop / strict devices.
     return navigator.mediaDevices.getUserMedia({
       audio,
-      video: {
-        width: { ideal: 640 },
-        height: { ideal: 360 },
-      },
+      video: true,
     });
   });
-}
-
-/**
- * Prefer H264 for Safari/iOS interop (VP8 often decodes on Chrome but not on
- * older WebKit), then VP8. Apply before createOffer/answer when possible.
- */
-function preferInteroperableVideoCodecs(transceiver: RTCRtpTransceiver | undefined) {
-  if (!transceiver || typeof transceiver.setCodecPreferences !== 'function') {
-    return;
-  }
-  try {
-    const caps = RTCRtpSender.getCapabilities?.('video');
-    if (!caps?.codecs?.length) {
-      return;
-    }
-    const rank = (mime: string) => {
-      const m = mime.toLowerCase();
-      if (m === 'video/h264') return 0;
-      if (m === 'video/vp8') return 1;
-      if (m.includes('rtx') || m.includes('red') || m.includes('ulpfec') || m.includes('flexfec')) {
-        return 3;
-      }
-      return 2;
-    };
-    const ordered = [...caps.codecs].sort((a, b) => rank(a.mimeType) - rank(b.mimeType));
-    transceiver.setCodecPreferences(ordered);
-    logP2p('set video codec preferences', {
-      mid: transceiver.mid,
-      codecs: ordered.slice(0, 6).map((c) => c.mimeType),
-    });
-  } catch (err) {
-    logP2p('set video codec preferences failed', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
 }
 
 function getStreamTrack(stream: MediaStream | undefined, kind?: 'audio' | 'video') {
@@ -465,7 +427,6 @@ export async function toggleStreamP2p(streamType: StreamType, value: boolean | u
             direction: 'sendrecv',
             streams: [videoOnlyStream],
           });
-          preferInteroperableVideoCodecs(transceiver);
           setLocalVideoTransceiver(streamType, transceiver);
           shouldRenegotiate = true;
           setOwnStream(streamType, videoOnlyStream);
@@ -476,16 +437,14 @@ export async function toggleStreamP2p(streamType: StreamType, value: boolean | u
         if (transceiver && streamType !== 'audio') {
           shouldRenegotiate ||= !transceiver.mid || transceiver.currentDirection === 'inactive';
           transceiver.direction = 'sendrecv';
-          preferInteroperableVideoCodecs(transceiver);
-          // Cap video bitrate so cellular+TURN can carry a usable picture.
-          // Keep enough headroom for H264 keyframes on Safari.
+          // Modest bitrate — works for LAN and TURN without starving ICE.
           try {
             const params = transceiver.sender.getParameters();
             if (!params.encodings?.length) {
               params.encodings = [{}];
             }
             params.encodings.forEach((encoding) => {
-              encoding.maxBitrate = 800_000;
+              encoding.maxBitrate = 600_000;
               encoding.maxFramerate = 24;
               encoding.scaleResolutionDownBy = encoding.scaleResolutionDownBy || 1;
             });
@@ -621,7 +580,6 @@ export async function joinPhoneCall(
       direction: 'sendrecv',
       streams: [blackVideo],
     });
-    preferInteroperableVideoCodecs(videoTransceiver);
   }
 
   const dataChannel = isOutgoing ? conn.createDataChannel('data', {
@@ -773,25 +731,40 @@ export async function joinPhoneCall(
         || isRemoteContentTransceiver(event.transceiver, true)
       ) {
         state.transceivers.remotePresentation = event.transceiver;
-        state.remoteMediaState.screencastState = 'active';
-        state.streams.presentation = stream;
+        const applyPresentation = () => {
+          if (!state || event.track.muted) return;
+          state.remoteMediaState.screencastState = 'active';
+          state.streams.presentation = stream;
+          updateStreams();
+        };
+        if (event.track.muted) {
+          event.track.onunmute = applyPresentation;
+        } else {
+          applyPresentation();
+        }
       } else {
         // Matches remoteVideo, local video sendrecv mid, or unknown video mid.
         state.transceivers.remoteVideo = event.transceiver;
-        state.remoteMediaState.videoState = 'active';
-        state.streams.video = stream;
-        event.track.onunmute = () => {
-          if (!state) return;
+        const applyRemoteVideo = () => {
+          if (!state || event.track.muted) return;
           state.remoteMediaState.videoState = 'active';
           state.streams.video = stream;
           updateStreams();
+          logP2p('remote video track attached', {
+            mid: event.transceiver.mid,
+            muted: event.track.muted,
+            enabled: event.track.enabled,
+            readyState: event.track.readyState,
+          });
         };
-        logP2p('remote video track attached', {
-          mid: event.transceiver.mid,
-          muted: event.track.muted,
-          enabled: event.track.enabled,
-          readyState: event.track.readyState,
-        });
+        if (event.track.muted) {
+          logP2p('remote video track muted; wait for unmute', {
+            mid: event.transceiver.mid,
+          });
+          event.track.onunmute = applyRemoteVideo;
+        } else {
+          applyRemoteVideo();
+        }
       }
     } else {
       logP2p('remote track ignored: unexpected kind', {
@@ -1536,8 +1509,9 @@ function shouldSendLocalOfferAfterRemoteAnswer() {
 }
 
 /**
- * Attach remote audio/video from transceiver receivers when ontrack did not fire
- * (or fired before we swapped ownVideo / mid maps).
+ * Attach remote audio/video from transceiver receivers when ontrack did not fire.
+ * Never promote a muted receiver track as "active" — that showed a black square
+ * and blocked the real remote stream after it arrived (regression after H264 work).
  */
 function attachRemoteMediaFromReceivers() {
   if (!state) {
@@ -1585,7 +1559,7 @@ function attachRemoteMediaFromReceivers() {
       || isRemoteContentTransceiver(transceiver, true);
 
     const attach = () => {
-      if (!state) return;
+      if (!state || track.muted) return;
       const stream = new MediaStream([track]);
       if (isPresentation) {
         state.transceivers.remotePresentation = transceiver;
@@ -1605,6 +1579,14 @@ function attachRemoteMediaFromReceivers() {
       });
     };
 
+    // Wait for the first frame — muted live tracks are empty placeholders.
+    if (track.muted) {
+      track.onunmute = () => {
+        attach();
+      };
+      return;
+    }
+
     const current = isPresentation
       ? getStreamTrack(state!.streams.presentation, 'video')
       : getStreamTrack(state!.streams.video, 'video');
@@ -1612,10 +1594,6 @@ function attachRemoteMediaFromReceivers() {
       attach();
       changed = true;
     }
-
-    track.onunmute = () => {
-      attach();
-    };
   });
 
   if (changed) {
@@ -1692,11 +1670,14 @@ async function bindLocalVideoToSharedRemoteOffer() {
     return;
   }
 
-  // After setRemoteDescription, pull remote track into streams if ontrack lagged.
+  // After setRemoteDescription, pull remote track if ontrack lagged — only when unmuted.
   if (localVideo?.receiver?.track && localVideo.receiver.track.readyState === 'live') {
     const remoteTrack = localVideo.receiver.track;
     const ownTrack = getStreamTrack(state.streams.ownVideo, 'video');
-    if (remoteTrack !== ownTrack && !remoteTrack.muted) {
+    if (remoteTrack === ownTrack) {
+      return;
+    }
+    if (!remoteTrack.muted) {
       state.streams.video = new MediaStream([remoteTrack]);
       state.remoteMediaState.videoState = 'active';
       state.transceivers.remoteVideo = localVideo;
@@ -1705,20 +1686,16 @@ async function bindLocalVideoToSharedRemoteOffer() {
         mid: localVideo.mid,
         muted: remoteTrack.muted,
       });
-    } else if (remoteTrack !== ownTrack) {
-      state.streams.video = new MediaStream([remoteTrack]);
-      state.remoteMediaState.videoState = 'active';
-      state.transceivers.remoteVideo = localVideo;
+    } else {
       remoteTrack.onunmute = () => {
         if (!state) return;
         state.streams.video = new MediaStream([remoteTrack]);
         state.remoteMediaState.videoState = 'active';
+        state.transceivers.remoteVideo = localVideo;
         updateStreams();
+        logP2p('attached remote video after unmute', { mid: localVideo.mid });
       };
-      updateStreams();
-      logP2p('attached muted remote video; waiting for unmute', {
-        mid: localVideo.mid,
-      });
+      logP2p('waiting for remote video unmute', { mid: localVideo.mid });
     }
   }
 }
@@ -1949,11 +1926,12 @@ function filterRemoteVideoPayloadTypes(content: MediaContent | undefined) {
   const supportedNames = new Set(supportedCodecs.map((codec) => {
     return codec.mimeType.split('/')[1]?.toUpperCase();
   }).filter(Boolean));
-  // H264 first for Safari/iPad; VP8 second for Chromium desktops.
+  // Keep browser defaults that previously worked for Safari→Chrome (PC saw
+  // iPad video). Prefer VP8 when both support it; fall back to H264 or any.
   const preferredCodec = payloadTypes.find((payloadType) => {
-    return payloadType.name.toUpperCase() === 'H264' && supportedNames.has('H264');
-  }) || payloadTypes.find((payloadType) => {
     return payloadType.name.toUpperCase() === 'VP8' && supportedNames.has('VP8');
+  }) || payloadTypes.find((payloadType) => {
+    return payloadType.name.toUpperCase() === 'H264' && supportedNames.has('H264');
   }) || payloadTypes.find((payloadType) => {
     return payloadType.name.toUpperCase() !== 'RTX' && supportedNames.has(payloadType.name.toUpperCase());
   });

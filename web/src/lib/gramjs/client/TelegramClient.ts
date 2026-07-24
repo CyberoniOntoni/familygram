@@ -772,9 +772,14 @@ class TelegramClient {
     // + a second TCP/WSS DC endpoint. FamilyGram is single-DC; `disableExportedSenders`
     // / `additionalDcsDisabled` were set but never wired, so photo getFile hung on
     // exported connections that never connected — media never left the client.
+    // Always use the main sender when additional DCs are disabled (even if media
+    // is tagged with a non-main dcId — common after layer upgrades / re-uploads).
     const mainDcId = this.session.dcId || this.defaultDcId;
-    if (!dcId || dcId === mainDcId || this._additionalDcsDisabled) {
-      return Promise.resolve(this._sender!);
+    if (!dcId || dcId === mainDcId || this._additionalDcsDisabled || !this._sender) {
+      if (!this._sender) {
+        return Promise.reject(new Error('Main MTProto sender is not connected'));
+      }
+      return Promise.resolve(this._sender);
     }
 
     return this._borrowExportedSender(dcId, undefined, undefined, index, isPremium);
