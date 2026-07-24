@@ -436,9 +436,8 @@ services:
   #   depends_on:
   #     - mongodb
 
-  ### 4.File server (FamilyGram open implementation)
-  # Built by FamilyGram-Server CI as ghcr.io/.../mytelegram-file-server.
-  # Override with MyTelegramRegistry to fall back to closed upstream image.
+  ### 4.File server (FamilyGram open implementation, layer 228)
+  # Built by FamilyGram-Server CI as ghcr.io/.../mytelegram-file-server:latest
   file-server:
     image: ${FileServerImage:-${FamilyGramServerRegistry:-${TestgramRegistry:-ghcr.io/cyberoniontoni/familygram-server}}/mytelegram-file-server:${FamilyGramServerVersion:-${TestgramVersion:-latest}}}
     restart: always
