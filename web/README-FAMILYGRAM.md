@@ -79,15 +79,15 @@ After each deploy, users should **clear site data** for the web URL so the new J
 
 ## FamilyGram TL / layer
 
-Wire layer is **228** (`TG_GRAMJS_LAYER=228`, `invokeWithLayer` 228). Requires FamilyGram-Server open session-server and messenger images from **`main`** (`Layers.LayerLatest = 228`).
+Wire layer is **228 only** (`TG_GRAMJS_LAYER=228`, `invokeWithLayer` 228). Requires FamilyGram-Server open session-server and messenger images from **`main`**.
 
-`src/util/familygramTlCompat.ts` keeps selected **224 constructor IDs as read aliases** so mixed traffic during client migration still deserializes.
+`src/util/familygramTlCompat.ts` forces primary constructor IDs to **228** (no legacy aliases).
 
 | Issue | Fix |
 |-------|-----|
 | Layer negotiation | `AllTLObjects.LAYER` / vite `TG_GRAMJS_LAYER` → **228** for self-hosted |
-| send/edit/saveDraft | Layer **228** constructors |
-| user / message / channel | Layer **228** primary; 224 IDs aliased for read |
+| send/edit/saveDraft | Layer **228** constructors only |
+| user / message / channel | Layer **228** only |
 | `getDhConfig` with `randomLength: 0` → `RANDOM_LENGTH_INVALID` | Uses `randomLength: 256` for calls |
 | Official Telegram RSA keys | FamilyGram production key fingerprint in `RSA.ts` |
 | `aicompose.getTones` unsupported | Skipped on FamilyGram |

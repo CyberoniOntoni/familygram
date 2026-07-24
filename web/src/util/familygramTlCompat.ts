@@ -1,37 +1,17 @@
 /**
- * FamilyGram TL interop for self-hosted stack (layer 228 wire).
- *
- * Primary constructors are layer 228. Keep 224 constructor IDs as read aliases
- * so mixed traffic during migration still deserializes.
+ * FamilyGram TL interop for self-hosted stack — full layer 228 wire only.
+ * Ensures primary constructor IDs match server Latest (228); no legacy aliases.
  */
 import { Api as GramJs } from '../lib/gramjs';
 import { tlobjects } from '../lib/gramjs/tl/AllTLObjects';
 import { IS_FAMILYGRAM } from '../config';
 
-// Layer 224 (legacy aliases for inbound only)
-const LAYER_224_SEND_MESSAGE_ID = 0x545cd15a;
-const LAYER_224_EDIT_MESSAGE_ID = 0x51e842e1;
-const LAYER_224_SAVE_DRAFT_ID = 0x54ae308e;
-const LAYER_224_USER_ID = 0x31774388;
-const LAYER_224_CHANNEL_ID = 0x1c32b11c;
-const LAYER_224_MESSAGE_ID = 0x3ae56482;
-
-// Layer 228 (primary wire)
 const LAYER_228_SEND_MESSAGE_ID = 0xfef48f62;
 const LAYER_228_EDIT_MESSAGE_ID = 0xb106e66c;
 const LAYER_228_SAVE_DRAFT_ID = 0xad0fa15c;
 const LAYER_228_USER_ID = 0xb1b8cc83;
 const LAYER_228_CHANNEL_ID = 0xd49f34c6;
 const LAYER_228_MESSAGE_ID = 0x7600b9d3;
-
-function aliasConstructorId(
-  cls: { CONSTRUCTOR_ID: number },
-  aliasId: number,
-) {
-  if (!cls) return;
-  if (tlobjects[aliasId] === cls) return;
-  tlobjects[aliasId] = cls;
-}
 
 function ensurePrimaryConstructorId(
   cls: { CONSTRUCTOR_ID: number; prototype?: { CONSTRUCTOR_ID?: number } },
@@ -48,31 +28,22 @@ function ensurePrimaryConstructorId(
 export function applyFamilyGramTlCompat(): void {
   if (!IS_FAMILYGRAM) return;
 
-  // Ensure outbound Latest IDs are 228 (in case generated modules lagged).
   if (GramJs.messages?.SendMessage) {
     ensurePrimaryConstructorId(GramJs.messages.SendMessage, LAYER_228_SEND_MESSAGE_ID);
-    aliasConstructorId(GramJs.messages.SendMessage, LAYER_224_SEND_MESSAGE_ID);
   }
   if (GramJs.messages?.EditMessage) {
     ensurePrimaryConstructorId(GramJs.messages.EditMessage, LAYER_228_EDIT_MESSAGE_ID);
-    aliasConstructorId(GramJs.messages.EditMessage, LAYER_224_EDIT_MESSAGE_ID);
   }
   if (GramJs.messages?.SaveDraft) {
     ensurePrimaryConstructorId(GramJs.messages.SaveDraft, LAYER_228_SAVE_DRAFT_ID);
-    aliasConstructorId(GramJs.messages.SaveDraft, LAYER_224_SAVE_DRAFT_ID);
   }
-
-  // Response types: 228 primary, 224 still parseable.
   if (GramJs.User) {
     ensurePrimaryConstructorId(GramJs.User, LAYER_228_USER_ID);
-    aliasConstructorId(GramJs.User, LAYER_224_USER_ID);
   }
   if (GramJs.Channel) {
     ensurePrimaryConstructorId(GramJs.Channel, LAYER_228_CHANNEL_ID);
-    aliasConstructorId(GramJs.Channel, LAYER_224_CHANNEL_ID);
   }
   if (GramJs.Message) {
     ensurePrimaryConstructorId(GramJs.Message, LAYER_228_MESSAGE_ID);
-    aliasConstructorId(GramJs.Message, LAYER_224_MESSAGE_ID);
   }
 }
